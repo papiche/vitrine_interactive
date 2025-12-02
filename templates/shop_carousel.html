@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UPlanet Vitrine - Cover Flow</title>
+    <link rel="stylesheet" href="/static/shop_carousel.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌍</text></svg>">
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Matrix Background Effect -->
+    <canvas id="matrix-bg" class="matrix-background"></canvas>
+    
+    <!-- Main Container -->
+    <div id="app" class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <span class="logo-icon">🌍</span>
+                <div class="logo-text">
+                    <span class="logo-title">UPlanet</span>
+                    <span class="logo-subtitle">Vitrine Interactive</span>
+                </div>
+            </div>
+            <div class="status-bar">
+                <div class="status-item" id="gesture-status">
+                    <span class="status-icon">🖐️</span>
+                    <span class="status-text">Detecting...</span>
+                </div>
+                <div class="status-item" id="message-count">
+                    <span class="status-icon">📨</span>
+                    <span class="status-text">0 messages</span>
+                </div>
+            </div>
+        </header>
+        
+        <!-- Cover Flow Carousel -->
+        <main class="carousel-container">
+            <div class="carousel-track" id="carousel-track">
+                <!-- Cards will be inserted here by JS -->
+            </div>
+            
+            <!-- Navigation Zones Overlay -->
+            <div class="nav-zone nav-zone-left" id="nav-zone-left">
+                <span class="nav-arrow">◀</span>
+                <span class="nav-label">Previous</span>
+            </div>
+            <div class="nav-zone nav-zone-right" id="nav-zone-right">
+                <span class="nav-arrow">▶</span>
+                <span class="nav-label">Next</span>
+            </div>
+            
+            <!-- Center detail hint -->
+            <div class="center-hint" id="center-hint">
+                <span>✋ Hold open hand 1s for details</span>
+            </div>
+        </main>
+        
+        <!-- Message Detail Panel (hidden by default) -->
+        <div class="detail-panel" id="detail-panel">
+            <div class="detail-content">
+                <button class="detail-close" id="detail-close">×</button>
+                
+                <!-- Profile Banner -->
+                <div class="detail-banner" id="detail-banner"></div>
+                
+                <div class="detail-header">
+                    <img class="detail-avatar" id="detail-avatar" src="" alt="Avatar">
+                    <div class="detail-author">
+                        <span class="detail-name" id="detail-name">Loading...</span>
+                        <span class="detail-nip05" id="detail-nip05"></span>
+                        <span class="detail-pubkey" id="detail-pubkey"></span>
+                    </div>
+                    <span class="detail-time" id="detail-time"></span>
+                </div>
+                <div class="detail-about" id="detail-about"></div>
+                <div class="detail-body">
+                    <p class="detail-text" id="detail-text"></p>
+                    <div class="detail-images" id="detail-images"></div>
+                </div>
+                <div class="detail-actions">
+                    <a class="detail-btn" id="detail-profile-btn" href="#" target="_blank">
+                        👤 View Profile
+                    </a>
+                    <a class="detail-btn" id="detail-external-btn" href="#" target="_blank">
+                        🔗 Open in Nostr
+                    </a>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Capture Status Indicator -->
+        <div class="capture-status" id="capture-status"></div>
+        
+        <!-- QR Code Overlay -->
+        <div class="qr-overlay" id="qr-overlay">
+            <div class="qr-modal">
+                <div class="qr-header">
+                    <span class="qr-title">📸 Photo Captured!</span>
+                    <span class="qr-subtitle">Scan to access your Ğ1 wallet</span>
+                </div>
+                <div class="qr-ipfs-info" id="qr-ipfs-info"></div>
+                <div class="qr-image-container">
+                    <img id="qr-image" class="qr-image" src="" alt="QR Code">
+                </div>
+                <div class="qr-url">http://127.0.0.1:54321/g1</div>
+                <div class="qr-timer">
+                    <span id="qr-countdown">10</span>s remaining
+                </div>
+            </div>
+        </div>
+        
+        <!-- Open Hand Progress (for detail view) -->
+        <div class="open-hand-progress" id="open-hand-progress">
+            <div class="capture-ring">
+                <svg viewBox="0 0 100 100">
+                    <circle class="capture-ring-bg" cx="50" cy="50" r="45"/>
+                    <circle class="open-hand-ring-fill" id="open-hand-ring-fill" cx="50" cy="50" r="45"/>
+                </svg>
+                <span class="capture-icon">✋</span>
+            </div>
+            <span class="capture-text">Hold to view details...</span>
+        </div>
+        
+        <!-- Thumbs Up Capture Progress -->
+        <div class="capture-progress" id="capture-progress">
+            <div class="capture-ring">
+                <svg viewBox="0 0 100 100">
+                    <circle class="capture-ring-bg" cx="50" cy="50" r="45"/>
+                    <circle class="capture-ring-fill" id="capture-ring-fill" cx="50" cy="50" r="45"/>
+                </svg>
+                <span class="capture-icon">👍</span>
+            </div>
+            <span class="capture-text">Hold for photo...</span>
+        </div>
+        
+        <!-- Webcam PIP -->
+        <div class="pip-container" id="pip-container">
+            <div class="pip-header">
+                <span class="pip-rec">● LIVE</span>
+                <span class="pip-label">Gesture Cam</span>
+            </div>
+            <img class="pip-video" id="pip-video" src="/video_feed" alt="Webcam Feed">
+            <div class="pip-gesture" id="pip-gesture">
+                <span id="pip-gesture-icon">🖐️</span>
+                <span id="pip-gesture-name">None</span>
+            </div>
+        </div>
+        
+        <!-- Navigation Dots -->
+        <div class="nav-dots" id="nav-dots">
+            <!-- Dots will be inserted by JS -->
+        </div>
+        
+        <!-- CopyLaRadio Branding -->
+        <footer class="footer">
+            <div class="footer-brand">
+                <span class="footer-logo">Ẑ</span>
+                <span class="footer-text">CopyLaRadio • Powered by Nostr & IPFS</span>
+            </div>
+            <div class="footer-gestures">
+                <span class="gesture-hint">👋 Swipe to navigate</span>
+                <span class="gesture-hint">✋ Hold 1s for details</span>
+                <span class="gesture-hint">✊ Fist to close</span>
+                <span class="gesture-hint">👍 Hold 1.5s to capture</span>
+            </div>
+            <div class="dark-mode-countdown" id="dark-mode-countdown"></div>
+        </footer>
+    </div>
+    
+    <!-- Scripts -->
+    <script src="/static/shop_carousel.js"></script>
+</body>
+</html>
+

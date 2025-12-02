@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Générateur de Gabarit pour Batchrocket</title>
+    <style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0; 
+            padding: 20px;
+            background-color: #f4f4f9;
+            color: #333;
+        }
+        h1, h2 { text-align: center; color: #2c3e50; }
+        .container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            max-width: 1200px;
+            margin: auto;
+        }
+        .controls, #viewer-container, #patterns-container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .controls { 
+            width: 100%;
+            text-align: center;
+        }
+        #viewer-container { 
+            flex: 1; 
+            min-width: 300px;
+            height: 500px; 
+            position: relative;
+        }
+        #viewer-canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        #patterns-container {
+            width: 100%;
+        }
+        .pattern-group { margin-bottom: 25px; }
+        .pattern-group svg {
+            border: 1px dashed #ccc;
+            width: 100%;
+            max-width: 800px;
+            display: block;
+            margin: 10px auto;
+        }
+        label { font-weight: bold; margin-right: 10px; }
+        input[type="range"] { width: 300px; }
+        #riser-diameter-value { font-weight: bold; color: #e74c3c; }
+
+        /* Styles pour l'impression */
+        @media print {
+            body * {
+                visibility: hidden;
+            }
+            #patterns-container, #patterns-container * {
+                visibility: visible;
+            }
+            #patterns-container {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+            }
+            .pattern-group {
+                page-break-after: always;
+            }
+            .pattern-group:last-child {
+                page-break-after: auto;
+            }
+            h2, h3 { visibility: visible; }
+        }
+        .print-button {
+            display: block;
+            width: 200px;
+            margin: 20px auto;
+            padding: 10px 15px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .print-button:hover { background-color: #2980b9; }
+
+    </style>
+</head>
+<body>
+
+    <h1>Générateur de Gabarit 3D pour Poêle Batchrocket</h1>
+
+    <div class="container">
+        <div class="controls">
+            <label for="riser-diameter">Diamètre de la cheminée (riser) :</label>
+            <input type="range" id="riser-diameter" min="10" max="30" value="15" step="1">
+            <span id="riser-diameter-value">15 cm</span>
+            <p>Ajustez le curseur pour mettre à l'échelle le poêle. Les patrons de découpe seront mis à jour automatiquement.</p>
+        </div>
+
+        <div id="viewer-container">
+             <canvas id="viewer-canvas"></canvas>
+        </div>
+    </div>
+
+    <div id="patterns-container">
+        <h2>Patrons de Découpe (à l'échelle, en cm)</h2>
+        <p style="text-align:center;">Utilisez le bouton ci-dessous pour imprimer ces patrons. Assurez-vous que l'échelle d'impression est à 100%.</p>
+        <button class="print-button" onclick="window.print()">Imprimer les Patrons</button>
+        <div id="patterns-output"></div>
+    </div>
+
+    <!-- Librairie Three.js -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // --- CONSTANTES DE DESIGN DU BATCHROCKET ---
+        const RATIOS = {
+            FIREBOX_HEIGHT: 3,
+            FIREBOX_DEPTH: 4.5,
+            PORT_HEIGHT: 2.2,
+            PORT_WIDTH: 0.5,
+            RISER_HEIGHT: 9, 
+        };
+
+        // --- SETUP SCÈNE 3D ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xffffff);
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(50, 50, 50);
+        
+        const canvas = document.getElementById('viewer-canvas');
+        const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+        renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        const gridHelper = new THREE.GridHelper(200, 20);
+        scene.add(gridHelper);
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(5, 10, 7.5);
+        scene.add(directionalLight);
+
+        let batchrocketGroup = new THREE.Group();
+        scene.add(batchrocketGroup);
+        
+        // --- LOGIQUE DE L'APPLICATION ---
+        const slider = document.getElementById('riser-diameter');
+        const valueDisplay = document.getElementById('riser-diameter-value');
+        const patternsOutput = document.getElementById('patterns-output');
+
+        function update() {
+            const riserDiameter = parseFloat(slider.value);
+            valueDisplay.textContent = `${riserDiameter} cm`;
+
+            const dims = calculateDimensions(riserDiameter);
+            update3DModel(dims);
+            update2DPatterns(dims);
+        }
+
+        function calculateDimensions(riserDiameter) {
+            const riserRadius = riserDiameter / 2;
+             // Le port a la même largeur que le riser pour la simplicité du gabarit
+            const portWidth = riserDiameter;
+            return {
+                riserDiameter: riserDiameter,
+                riserRadius: riserRadius,
+                riserHeight: riserDiameter * RATIOS.RISER_HEIGHT,
+                fireboxWidth: riserDiameter,
+                fireboxHeight: riserDiameter * RATIOS.FIREBOX_HEIGHT,
+                fireboxDepth: riserDiameter * RATIOS.FIREBOX_DEPTH,
+                portHeight: riserDiameter * RATIOS.PORT_HEIGHT,
+                portWidth: portWidth,
+            };
+        }
+
+        function update3DModel(dims) {
+            while(batchrocketGroup.children.length > 0){ 
+                batchrocketGroup.remove(batchrocketGroup.children[0]); 
+            }
+
+            const material = new THREE.MeshStandardMaterial({ 
+                color: 0xe74c3c, 
+                transparent: true, 
+                opacity: 0.8,
+                side: THREE.DoubleSide
+            });
+
+            const fireboxGeo = new THREE.BoxGeometry(dims.fireboxWidth, dims.fireboxHeight, dims.fireboxDepth);
+            const fireboxMesh = new THREE.Mesh(fireboxGeo, material);
+            fireboxMesh.position.set(0, dims.fireboxHeight / 2, 0);
+            batchrocketGroup.add(fireboxMesh);
+            
+            const portGeo = new THREE.BoxGeometry(dims.portWidth, dims.portHeight, dims.riserDiameter);
+            const portMesh = new THREE.Mesh(portGeo, material);
+            portMesh.position.set(0, dims.portHeight / 2, -(dims.fireboxDepth / 2 + dims.riserDiameter / 2));
+            batchrocketGroup.add(portMesh);
+
+            const riserGeo = new THREE.CylinderGeometry(dims.riserRadius, dims.riserRadius, dims.riserHeight, 32);
+            const riserMesh = new THREE.Mesh(riserGeo, material);
+            riserMesh.position.set(0, dims.riserHeight / 2, -(dims.fireboxDepth / 2 + dims.riserDiameter));
+            batchrocketGroup.add(riserMesh);
+        }
+
+        function update2DPatterns(dims) {
+            const svgHeader = `xmlns="http://www.w3.org/2000/svg"`;
+            const stroke = "black";
+            const textFill = "#c0392b";
+            const dp = (num) => num.toFixed(1);
+
+            // *** CORRECTION ICI: La taille de la police est maintenant dynamique ***
+            const fontSize = Math.max(Math.min(dims.riserDiameter / 2.5, 9), 4);
+
+            // 1. Patron de la cheminée (Riser)
+            const riserCircumference = Math.PI * dims.riserDiameter;
+            const riserSVG = `
+                <div class="pattern-group">
+                    <h3>Patron 1: Cheminée (Riser) - à rouler</h3>
+                    <svg viewBox="-15 -15 ${riserCircumference + 30} ${dims.riserHeight + 30}" ${svgHeader}>
+                        <rect x="0" y="0" width="${riserCircumference}" height="${dims.riserHeight}" fill="#f2f2f2" stroke="${stroke}"/>
+                        <text x="${riserCircumference/2}" y="-5" text-anchor="middle" font-size="${fontSize}">${dp(riserCircumference)} cm</text>
+                        <text x="-5" y="${dims.riserHeight/2}" text-anchor="end" dominant-baseline="middle" font-size="${fontSize}" transform="rotate(-90, -5, ${dims.riserHeight/2})">${dp(dims.riserHeight)} cm</text>
+                    </svg>
+                </div>
+            `;
+            
+            // 2. Patron de la boîte à feu - *** CORRECTION DU DESSIN ET DES LABELS ***
+            const fbW = dims.fireboxWidth;
+            const fbH = dims.fireboxHeight;
+            const fbD = dims.fireboxDepth;
+            const totalWidth = fbD + fbW + fbD; // Côté G. + Arrière + Côté D.
+            const totalHeight = fbH + fbD + fbD; // Arrière + Fond + Dessus
+            
+            const fireboxSVG = `
+                <div class="pattern-group">
+                    <h3>Patron 2: Boîte à feu (sans la face avant) - à plier</h3>
+                    <svg viewBox="-10 -10 ${totalWidth + 20} ${totalHeight + 20}" ${svgHeader}>
+                        <defs><style>.dim{font-size:${fontSize}px; fill:${textFill}; text-anchor: middle; dominant-baseline: middle;}</style></defs>
+                        <path d="
+                            M ${fbD}, ${fbH} L 0, ${fbH} L 0, 0 L ${totalWidth}, 0 L ${totalWidth}, ${fbH} L ${fbD+fbW}, ${fbH}
+                            V ${totalHeight} H ${fbD} V ${fbH} Z
+                        " fill="#f2f2f2" stroke="${stroke}"/>
+                        <line x1="${fbD}" y1="0" x2="${fbD}" y2="${totalHeight}" stroke="${stroke}" stroke-dasharray="4"/>
+                        <line x1="${fbD+fbW}" y1="0" x2="${fbD+fbW}" y2="${totalHeight}" stroke="${stroke}" stroke-dasharray="4"/>
+                        <line x1="0" y1="${fbH}" x2="${totalWidth}" y2="${fbH}" stroke="${stroke}" stroke-dasharray="4"/>
+                        <line x1="${fbD}" y1="${fbH+fbD}" x2="${fbD+fbW}" y2="${fbH+fbD}" stroke="${stroke}" stroke-dasharray="4"/>
+
+                        <text x="${fbD + fbW/2}" y="${fbH/2}" class="dim">Arrière (${dp(fbW)}x${dp(fbH)})</text>
+                        <text x="${fbD/2}" y="${fbH/2}" class="dim">Côté G. (${dp(fbD)}x${dp(fbH)})</text>
+                        <text x="${totalWidth - fbD/2}" y="${fbH/2}" class="dim">Côté D. (${dp(fbD)}x${dp(fbH)})</text>
+                        <text x="${fbD + fbW/2}" y="${fbH + fbD/2}" class="dim">Fond (${dp(fbW)}x${dp(fbD)})</text>
+                        <text x="${fbD + fbW/2}" y="${fbH + fbD + fbD/2}" class="dim">Dessus (${dp(fbW)}x${dp(fbD)})</text>
+                    </svg>
+                </div>
+            `;
+            
+            // 3. Patron du port
+            const pW = dims.portWidth;
+            const pH = dims.portHeight;
+            const pD = dims.riserDiameter;
+            const portTotalWidth = pD + pW + pD;
+            const portTotalHeight = pH + pD;
+            
+             const portSVG = `
+                <div class="pattern-group">
+                    <h3>Patron 3: Port de connexion - à plier</h3>
+                    <svg viewBox="-10 -10 ${portTotalWidth + 20} ${portTotalHeight + 20}" ${svgHeader}>
+                        <defs><style>.dim{font-size:${fontSize}px; fill:${textFill}; text-anchor: middle; dominant-baseline: middle;}</style></defs>
+                        <path d="
+                            M ${pD},0 H ${pD + pW} V ${pH} H ${portTotalWidth} V ${portTotalHeight} H ${pD} V ${pH} H 0 Z
+                        " fill="#f2f2f2" stroke="${stroke}" />
+                         <line x1="${pD}" y1="0" x2="${pD}" y2="${pH}" stroke="${stroke}" stroke-dasharray="4"/>
+                         <line x1="${pD+pW}" y1="0" x2="${pD+pW}" y2="${pH}" stroke="${stroke}" stroke-dasharray="4"/>
+                         <line x1="0" y1="${pH}" x2="${portTotalWidth}" y2="${pH}" stroke="${stroke}" stroke-dasharray="4"/>
+
+                        <text x="${pD + pW/2}" y="${pH/2}" class="dim">Face (${dp(pW)}x${dp(pH)})</text>
+                        <text x="${pD/2}" y="${pH/2}" class="dim">Côté (${dp(pD)}x${dp(pH)})</text>
+                        <text x="${pD+pW+pD/2}" y="${pH/2}" class="dim">Côté (${dp(pD)}x${dp(pH)})</text>
+                        <text x="${pD+pW/2}" y="${pH+pD/2}" class="dim">Dessus (${dp(pW)}x${dp(pD)})</text>
+                    </svg>
+                </div>
+            `;
+
+            patternsOutput.innerHTML = riserSVG + fireboxSVG + portSVG;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        
+        slider.addEventListener('input', update);
+        window.addEventListener('resize', () => {
+            const container = document.getElementById('viewer-container');
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        });
+
+        update();
+        animate();
+
+    </script>
+</body>
+</html>

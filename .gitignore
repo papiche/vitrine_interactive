@@ -1,0 +1,34 @@
+# Photos captured by vitrine - keep directory but ignore contents
+photos/*
+!photos/.gitkeep
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+upload_*.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
