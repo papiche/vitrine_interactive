@@ -214,4 +214,4 @@ Projet CopyLaRadio / UPlanet - Contributions bienvenues !
 
 ---
 
-**Contact** : support@qo-op.com | [UPlanet](https://u.planet)
+**Contact** : support@qo-op.com | [CopyLaRadio](https://copylaradio.com)
