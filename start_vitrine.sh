@@ -58,11 +58,13 @@ echo -e "${GREEN}[INFO] Checking dependencies...${NC}"
 REQUIRED_PACKAGES=(
     "flask"
     "flask-cors"
+    "flask-socketio"
     "opencv-python"
     "mediapipe"
     "numpy"
     "qrcode"
     "Pillow"
+    "requests"
 )
 
 # Install missing packages
@@ -75,6 +77,9 @@ for pkg in "${REQUIRED_PACKAGES[@]}"; do
                 ;;
             "flask-cors")
                 python3 -c "import flask_cors" 2>/dev/null || pip install flask-cors --quiet
+                ;;
+            "flask-socketio")
+                python3 -c "import flask_socketio" 2>/dev/null || pip install flask-socketio --quiet
                 ;;
             "Pillow")
                 python3 -c "import PIL" 2>/dev/null || pip install Pillow --quiet

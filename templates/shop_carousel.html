@@ -174,6 +174,11 @@
     </div>
     
     <!-- Scripts -->
+    <!-- Socket.IO client for WebSocket support (optional, falls back to polling) -->
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js" 
+            integrity="sha384-mZLpReWNLkXaRJxFjM6MrZ19EPhQEUiJmDqVhvt7SqhHSdVn1qERTl8OAYAB92DJ" 
+            crossorigin="anonymous"
+            onerror="console.log('[WS] Socket.IO CDN unavailable, using HTTP polling')"></script>
     <script src="/static/shop_carousel.js"></script>
 </body>
 </html>

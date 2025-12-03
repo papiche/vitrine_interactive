@@ -37,6 +37,14 @@ from collections import deque
 from flask import Flask, Response, render_template, jsonify, request, send_from_directory
 from flask_cors import CORS
 
+# WebSocket support
+try:
+    from flask_socketio import SocketIO, emit
+    HAS_SOCKETIO = True
+except ImportError:
+    HAS_SOCKETIO = False
+    print("[WARN] flask-socketio not installed. pip install flask-socketio")
+
 # Computer Vision
 import cv2
 import numpy as np
@@ -90,6 +98,12 @@ app = Flask(__name__,
             static_folder=str(STATIC_DIR))
 CORS(app)
 
+# Initialize SocketIO if available
+if HAS_SOCKETIO:
+    socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+else:
+    socketio = None
+
 # --- GLOBAL STATE ---
 class GestureState:
     """Tracks gesture detection state"""
@@ -105,7 +119,9 @@ class GestureState:
         self.action = "idle"  # idle, nav_left, nav_right, detail, detail_close, capture
         self.last_swipe_time = 0
         self.thumbs_up_start = 0
+        self.thumbs_up_start_x = 0.5  # X position when thumbs up started
         self.open_hand_start = 0  # Track open hand hold time
+        self.open_hand_start_x = 0.5  # X position when open hand started
         self.current_index = 0  # Current message index
         self.show_detail = False
         self.detail_opened = False  # Track if detail was opened by gesture
@@ -117,6 +133,9 @@ class GestureState:
         self.light_mode = False
         self.last_hand_seen = 0  # Timestamp when hand was last seen
         self.lock = threading.Lock()
+
+# Movement threshold to switch from "open hand hold" to "swipe" (normalized 0-1)
+HAND_MOVEMENT_THRESHOLD = 0.08  # 8% of screen width - more sensitive to movement
 
 gesture_state = GestureState()
 
@@ -193,25 +212,37 @@ class NostrFeed:
         """Extract image URLs from content and imeta tags"""
         images = []
         
-        # Extract from content
+        # Extract image URLs from content (jpg, jpeg, png, gif, webp)
         url_pattern = r'(https?://[^\s<>"{}|\\^`\[\]]+\.(?:jpg|jpeg|png|gif|webp)(?:\?[^\s<>"{}|\\^`\[\]]*)?)'
         content_images = re.findall(url_pattern, content, re.IGNORECASE)
         images.extend(content_images)
         
+        # Extract IPFS gateway URLs (even without image extension)
+        ipfs_pattern = r'(https?://[^\s<>"{}|\\^`\[\]]*(?:ipfs\.io|ipfs\.copylaradio|dweb\.link|gateway\.pinata)[^\s<>"{}|\\^`\[\]]+)'
+        ipfs_urls = re.findall(ipfs_pattern, content, re.IGNORECASE)
+        for url in ipfs_urls:
+            if url not in images:
+                images.append(url)
+        
         # Extract from imeta tags (NIP-94)
         if tags:
             for tag in tags:
-                if tag[0] == 'imeta':
-                    for i, item in enumerate(tag[1:], 1):
+                if len(tag) > 0 and tag[0] == 'imeta':
+                    for item in tag[1:]:
                         if isinstance(item, str):
                             if item.startswith('url '):
                                 url = item[4:].strip()
-                                if url.startswith('http'):
+                                if url.startswith('http') and url not in images:
                                     images.append(url)
-                            elif item.startswith('http') and any(ext in item.lower() for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp']):
+                            elif item.startswith('http') and url not in images:
                                 images.append(item)
+                # Also check for direct image/thumb tags
+                elif len(tag) > 1 and tag[0] in ('image', 'thumb', 'preview'):
+                    url = tag[1]
+                    if url.startswith('http') and url not in images:
+                        images.append(url)
         
-        return list(set(images))  # Remove duplicates
+        return images  # Keep order, first image is primary
     
     def _fetch_events(self):
         """Fetch events from Nostr relay"""
@@ -329,22 +360,43 @@ class CameraHandler:
     def start(self):
         """Start camera capture"""
         if self.running:
-            return
+            return True
         
-        self.cap = cv2.VideoCapture(self.camera_index)
-        if not self.cap.isOpened():
-            print(f"[CAMERA] Failed to open camera {self.camera_index}")
-            return False
+        # Try specified camera index first
+        indices_to_try = [self.camera_index]
         
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
-        self.cap.set(cv2.CAP_PROP_FPS, 30)
+        # Add other common indices as fallback
+        for i in range(4):
+            if i != self.camera_index:
+                indices_to_try.append(i)
         
-        self.running = True
-        t = threading.Thread(target=self._capture_loop, daemon=True)
-        t.start()
-        print(f"[CAMERA] Started on index {self.camera_index}")
-        return True
+        for idx in indices_to_try:
+            print(f"[CAMERA] Trying camera index {idx}...")
+            self.cap = cv2.VideoCapture(idx)
+            
+            if self.cap.isOpened():
+                # Test if we can actually read a frame
+                ret, _ = self.cap.read()
+                if ret:
+                    self.camera_index = idx
+                    self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
+                    self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
+                    self.cap.set(cv2.CAP_PROP_FPS, 30)
+                    
+                    self.running = True
+                    t = threading.Thread(target=self._capture_loop, daemon=True)
+                    t.start()
+                    print(f"[CAMERA] ✅ Started on index {self.camera_index}")
+                    return True
+                else:
+                    self.cap.release()
+            else:
+                if self.cap:
+                    self.cap.release()
+        
+        print(f"[CAMERA] ❌ Failed to open any camera")
+        print(f"[CAMERA] Available devices: ls /dev/video*")
+        return False
     
     def stop(self):
         """Stop camera capture"""
@@ -465,25 +517,58 @@ class CameraHandler:
                 gesture_state.gesture_name = "thumbs_up"
                 gesture_state.open_hand_start = 0  # Reset open hand timer
                 if gesture_state.thumbs_up_start == 0:
+                    # Start tracking thumbs up
                     gesture_state.thumbs_up_start = current_time
-                elif current_time - gesture_state.thumbs_up_start >= THUMBS_UP_HOLD_TIME:
-                    if not gesture_state.photo_captured:
-                        gesture_state.action = "capture"
-                        gesture_state.photo_captured = True
+                    gesture_state.thumbs_up_start_x = gesture_state.hand_x
+                else:
+                    # Check if hand moved too much (cancel thumbs up gesture)
+                    movement = abs(gesture_state.hand_x - gesture_state.thumbs_up_start_x)
+                    if movement > HAND_MOVEMENT_THRESHOLD:
+                        # Hand moved - reset timer (cancel capture)
+                        gesture_state.thumbs_up_start = current_time
+                        gesture_state.thumbs_up_start_x = gesture_state.hand_x
+                    elif current_time - gesture_state.thumbs_up_start >= THUMBS_UP_HOLD_TIME:
+                        # Hand stationary with thumbs up for enough time
+                        if not gesture_state.photo_captured:
+                            gesture_state.action = "capture"
+                            gesture_state.photo_captured = True
             else:
                 gesture_state.thumbs_up_start = 0
                 gesture_state.photo_captured = False
                 
                 if is_open_hand:
-                    gesture_state.gesture_name = "open_hand"
                     # Track open hand hold time for detail view
                     if gesture_state.open_hand_start == 0:
+                        # Start tracking open hand
                         gesture_state.open_hand_start = current_time
-                    elif current_time - gesture_state.open_hand_start >= OPEN_HAND_HOLD_TIME:
-                        if not gesture_state.detail_opened:
-                            gesture_state.action = "detail"
-                            gesture_state.show_detail = True
-                            gesture_state.detail_opened = True
+                        gesture_state.open_hand_start_x = gesture_state.hand_x
+                        gesture_state.gesture_name = "open_hand"
+                    else:
+                        # Check if hand moved too much
+                        movement = abs(gesture_state.hand_x - gesture_state.open_hand_start_x)
+                        if movement > HAND_MOVEMENT_THRESHOLD:
+                            # Hand is MOVING with open hand = SWIPE navigation
+                            gesture_state.open_hand_start = 0  # Reset timer completely
+                            gesture_state.gesture_name = "swiping"
+                            
+                            # Allow navigation even with open hand if moving
+                            if current_time - gesture_state.last_swipe_time > SWIPE_COOLDOWN:
+                                if gesture_state.hand_x < ZONE_LEFT:
+                                    gesture_state.action = "nav_left"
+                                    gesture_state.last_swipe_time = current_time
+                                elif gesture_state.hand_x > ZONE_RIGHT:
+                                    gesture_state.action = "nav_right"
+                                    gesture_state.last_swipe_time = current_time
+                        elif current_time - gesture_state.open_hand_start >= OPEN_HAND_HOLD_TIME:
+                            # Hand STATIONARY with open hand for enough time = DETAIL
+                            gesture_state.gesture_name = "open_hand"
+                            if not gesture_state.detail_opened:
+                                gesture_state.action = "detail"
+                                gesture_state.show_detail = True
+                                gesture_state.detail_opened = True
+                        else:
+                            # Waiting for hold time
+                            gesture_state.gesture_name = "open_hand"
                 elif is_fist:
                     gesture_state.gesture_name = "fist"
                     gesture_state.open_hand_start = 0
@@ -633,10 +718,12 @@ def upload_to_ipfs(file_path):
         if npub_file.exists():
             npub = npub_file.read_text().strip()
     
+    filename = os.path.basename(file_path)
+    
     try:
         print(f"[IPFS] Uploading {file_path} via API...")
         with open(file_path, 'rb') as f:
-            files = {'file': (os.path.basename(file_path), f, 'image/jpeg')}
+            files = {'file': (filename, f, 'image/jpeg')}
             data = {'npub': npub} if npub else {}
             
             response = requests.post(
@@ -652,8 +739,10 @@ def upload_to_ipfs(file_path):
                 result['success'] = True
                 result['cid'] = resp_json.get('new_cid') or resp_json.get('cid')
                 result['info_cid'] = resp_json.get('info')
-                result['ipfs_url'] = f"https://ipfs.copylaradio.com/ipfs/{result['cid']}"
-                print(f"[IPFS] Upload success! CID: {result['cid']}")
+                result['filename'] = filename
+                # Full URL with filename
+                result['ipfs_url'] = f"https://ipfs.copylaradio.com/ipfs/{result['cid']}/{filename}"
+                print(f"[IPFS] Upload success! CID: {result['cid']}/{filename}")
                 return result
             else:
                 result['error'] = resp_json.get('error', 'Unknown error')
@@ -678,6 +767,8 @@ def upload_to_ipfs(file_path):
             upload_script = path
             break
     
+    filename = os.path.basename(file_path)
+    
     if upload_script:
         try:
             print(f"[IPFS] Using upload2ipfs.sh: {upload_script}")
@@ -692,8 +783,10 @@ def upload_to_ipfs(file_path):
                     result['success'] = True
                     result['cid'] = upload_result.get('cid')
                     result['info_cid'] = upload_result.get('info')
-                    result['ipfs_url'] = f"https://ipfs.copylaradio.com/ipfs/{result['cid']}"
-                    print(f"[IPFS] Upload success via script! CID: {result['cid']}")
+                    result['filename'] = filename
+                    # Full URL with filename (directory CID + filename)
+                    result['ipfs_url'] = f"https://ipfs.copylaradio.com/ipfs/{result['cid']}/{filename}"
+                    print(f"[IPFS] Upload success via script! CID: {result['cid']}/{filename}")
                 os.remove(output_json)
                 return result
             else:
@@ -701,18 +794,22 @@ def upload_to_ipfs(file_path):
         except Exception as e:
             result['error'] = f"Script error: {e}"
     
-    # Final fallback: Direct IPFS add
+    # Final fallback: Direct IPFS add (wrap in directory for filename)
     try:
         print("[IPFS] Trying direct IPFS add...")
-        cmd = ["ipfs", "add", "-q", file_path]
+        # Add with wrap (-w) to preserve filename
+        cmd = ["ipfs", "add", "-q", "-w", file_path]
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         
         if proc.returncode == 0 and proc.stdout.strip():
-            cid = proc.stdout.strip()
+            lines = proc.stdout.strip().split('\n')
+            # Last line is the directory CID, first is the file CID
+            dir_cid = lines[-1] if len(lines) > 1 else lines[0]
             result['success'] = True
-            result['cid'] = cid
-            result['ipfs_url'] = f"https://ipfs.copylaradio.com/ipfs/{cid}"
-            print(f"[IPFS] Direct add success! CID: {cid}")
+            result['cid'] = dir_cid
+            result['filename'] = filename
+            result['ipfs_url'] = f"https://ipfs.copylaradio.com/ipfs/{dir_cid}/{filename}"
+            print(f"[IPFS] Direct add success! CID: {dir_cid}/{filename}")
             return result
     except Exception as e:
         result['error'] = f"Direct IPFS add failed: {e}"
@@ -772,16 +869,29 @@ def post_photo_to_nostr(photo_path, message="📸 Photo from UPlanet Vitrine Int
             "--content", full_message
         ]
         
+        # Build tags array with vitrine identifiers
+        tags = [
+            # Hashtag for easy filtering
+            ["t", "vitrine"],
+            ["t", "UPlanet"],
+            # Client identifier tag
+            ["client", "vitrine-interactive"],
+            # Application tag (NIP-89 style)
+            ["alt", "Photo captured by UPlanet Vitrine Interactive"]
+        ]
+        
         # Add image tag if we have IPFS URL (for NIP-94 style)
         if ipfs_url:
-            # Add imeta tag for the image
-            tags_json = json.dumps([["imeta", f"url {ipfs_url}", "m image/jpeg"]])
-            cmd.extend(["--tags", tags_json])
+            tags.append(["imeta", f"url {ipfs_url}", "m image/jpeg"])
+            tags.append(["image", ipfs_url])
+        
+        tags_json = json.dumps(tags)
+        cmd.extend(["--tags", tags_json])
         
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         
         if result.returncode == 0:
-            print(f"[NOSTR] Photo message posted successfully{' with IPFS URL' if ipfs_url else ''}")
+            print(f"[NOSTR] Photo message posted successfully with tags: #vitrine #UPlanet")
             return True
         else:
             print(f"[NOSTR] Post failed: {result.stderr}")
@@ -976,6 +1086,114 @@ def serve_static(filename):
     """Serve static files"""
     return send_from_directory(str(STATIC_DIR), filename)
 
+# --- WEBSOCKET HANDLERS ---
+ws_clients_connected = 0
+
+def gesture_websocket_emitter():
+    """Background thread that emits gesture updates via WebSocket"""
+    global ws_clients_connected
+    
+    if not HAS_SOCKETIO or not socketio:
+        return
+    
+    last_state = {}
+    
+    while True:
+        time.sleep(0.033)  # ~30 FPS - more efficient than 50ms polling
+        
+        if ws_clients_connected <= 0:
+            continue  # No clients, skip processing
+        
+        current_time = time.time()
+        
+        with gesture_state.lock:
+            # Calculate progress values
+            open_hand_progress = 0
+            if gesture_state.open_hand_start > 0:
+                elapsed = current_time - gesture_state.open_hand_start
+                open_hand_progress = min(elapsed / OPEN_HAND_HOLD_TIME, 1.0)
+            
+            thumbs_up_progress = 0
+            if gesture_state.thumbs_up_start > 0:
+                elapsed = current_time - gesture_state.thumbs_up_start
+                thumbs_up_progress = min(elapsed / THUMBS_UP_HOLD_TIME, 1.0)
+            
+            time_until_dark = 0
+            if gesture_state.light_mode and gesture_state.last_hand_seen > 0 and not gesture_state.hand_detected:
+                elapsed_since_hand = current_time - gesture_state.last_hand_seen
+                time_until_dark = max(0, DARK_MODE_TIMEOUT - elapsed_since_hand)
+            
+            current_state = {
+                'hand_detected': gesture_state.hand_detected,
+                'hand_x': round(gesture_state.hand_x, 3),
+                'hand_y': round(gesture_state.hand_y, 3),
+                'fingers_open': gesture_state.fingers_open,
+                'is_open_hand': gesture_state.is_open_hand,
+                'is_thumbs_up': gesture_state.is_thumbs_up,
+                'is_fist': gesture_state.is_fist,
+                'gesture_name': gesture_state.gesture_name,
+                'action': gesture_state.action,
+                'current_index': gesture_state.current_index,
+                'show_detail': gesture_state.show_detail,
+                'detail_opened': gesture_state.detail_opened,
+                'show_qr': gesture_state.show_qr,
+                'open_hand_progress': round(open_hand_progress, 2),
+                'thumbs_up_progress': round(thumbs_up_progress, 2),
+                'light_mode': gesture_state.light_mode,
+                'time_until_dark': round(time_until_dark, 1)
+            }
+            
+            # Reset action after reading
+            if gesture_state.action in ['nav_left', 'nav_right', 'capture', 'detail', 'detail_close']:
+                gesture_state.action = 'idle'
+        
+        # Only emit if state changed (optimization)
+        if current_state != last_state:
+            socketio.emit('gesture', current_state)
+            last_state = current_state.copy()
+
+if HAS_SOCKETIO and socketio:
+    @socketio.on('connect')
+    def ws_connect():
+        global ws_clients_connected
+        ws_clients_connected += 1
+        print(f"[WS] Client connected ({ws_clients_connected} total)")
+        emit('connected', {'status': 'ok', 'mode': 'websocket'})
+    
+    @socketio.on('disconnect')
+    def ws_disconnect():
+        global ws_clients_connected
+        ws_clients_connected = max(0, ws_clients_connected - 1)
+        print(f"[WS] Client disconnected ({ws_clients_connected} remaining)")
+    
+    @socketio.on('request_gesture')
+    def ws_request_gesture():
+        """Manual request for current gesture state"""
+        current_time = time.time()
+        
+        with gesture_state.lock:
+            open_hand_progress = 0
+            if gesture_state.open_hand_start > 0:
+                open_hand_progress = min((current_time - gesture_state.open_hand_start) / OPEN_HAND_HOLD_TIME, 1.0)
+            
+            thumbs_up_progress = 0
+            if gesture_state.thumbs_up_start > 0:
+                thumbs_up_progress = min((current_time - gesture_state.thumbs_up_start) / THUMBS_UP_HOLD_TIME, 1.0)
+            
+            emit('gesture', {
+                'hand_detected': gesture_state.hand_detected,
+                'hand_x': gesture_state.hand_x,
+                'hand_y': gesture_state.hand_y,
+                'gesture_name': gesture_state.gesture_name,
+                'action': gesture_state.action,
+                'is_open_hand': gesture_state.is_open_hand,
+                'is_thumbs_up': gesture_state.is_thumbs_up,
+                'is_fist': gesture_state.is_fist,
+                'open_hand_progress': open_hand_progress,
+                'thumbs_up_progress': thumbs_up_progress,
+                'light_mode': gesture_state.light_mode
+            })
+
 # --- MAIN ---
 def main():
     parser = argparse.ArgumentParser(description='UPlanet Vitrine Interactive')
@@ -1005,10 +1223,22 @@ def main():
     
     print(f"[SERVER] Starting on http://127.0.0.1:{args.port}")
     print(f"[SERVER] Webcam feed: http://127.0.0.1:{args.port}/video_feed")
+    if HAS_SOCKETIO:
+        print(f"[SERVER] WebSocket enabled for real-time gestures")
+    else:
+        print(f"[SERVER] WebSocket disabled (install flask-socketio for better performance)")
     print(f"[SERVER] Press Ctrl+C to stop")
     
     try:
-        app.run(host='0.0.0.0', port=args.port, debug=args.debug, threaded=True)
+        if HAS_SOCKETIO and socketio:
+            # Start gesture emitter thread
+            gesture_emitter_thread = threading.Thread(target=gesture_websocket_emitter, daemon=True)
+            gesture_emitter_thread.start()
+            # Use SocketIO server (disable reloader to avoid camera conflicts)
+            socketio.run(app, host='0.0.0.0', port=args.port, debug=args.debug, use_reloader=False)
+        else:
+            # Fallback to regular Flask (disable reloader to avoid camera conflicts)
+            app.run(host='0.0.0.0', port=args.port, debug=args.debug, threaded=True, use_reloader=False)
     except KeyboardInterrupt:
         print("\n[SERVER] Shutting down...")
     finally:

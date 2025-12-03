@@ -39,6 +39,9 @@ const state = {
     mouseEnabled: true,
     lightMode: false,
     timeUntilDark: 0,
+    // WebSocket
+    socket: null,
+    useWebSocket: false,
 };
 
 // === DOM Elements ===
@@ -199,10 +202,19 @@ function createCard(event, index) {
     const displayName = profile.display_name || profile.name || `@${event.pubkey?.substring(0, 8) || 'anon'}`;
     const authorShort = event.pubkey ? event.pubkey.substring(0, 8) : 'anon';
     
-    // Image or placeholder
-    const imageHtml = event.images && event.images.length > 0
-        ? `<img class="card-image" src="${escapeHtml(event.images[0])}" alt="Media" loading="lazy">`
-        : `<div class="card-image-placeholder">📝</div>`;
+    // Header image: content image first, then profile banner, then placeholder
+    let headerImageHtml;
+    if (event.images && event.images.length > 0) {
+        // Use first image from content (with fallback on error)
+        headerImageHtml = `<img class="card-image" src="${escapeHtml(event.images[0])}" alt="Media" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="card-image-placeholder" style="display:none">📝</div>`;
+    } else if (profile.banner) {
+        // Fallback to profile banner (with fallback on error)
+        headerImageHtml = `<img class="card-image card-banner" src="${escapeHtml(profile.banner)}" alt="Banner" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="card-image-placeholder" style="display:none">📝</div>`;
+    } else {
+        // No image available
+        headerImageHtml = `<div class="card-image-placeholder">📝</div>`;
+    }
+    const imageHtml = headerImageHtml;
     
     // Avatar - use profile picture or fallback
     const avatarHtml = profile.picture
@@ -352,7 +364,63 @@ function navigateRight() {
 
 // === Gesture Polling ===
 function startGesturePolling() {
+    // Try WebSocket first (more efficient)
+    if (typeof io !== 'undefined') {
+        try {
+            console.log('[WS] Attempting WebSocket connection...');
+            state.socket = io(CONFIG.API_BASE || window.location.origin, {
+                transports: ['websocket', 'polling'],
+                reconnection: true,
+                reconnectionDelay: 1000,
+                reconnectionAttempts: 5
+            });
+            
+            state.socket.on('connect', () => {
+                console.log('[WS] Connected! Using WebSocket for gestures');
+                state.useWebSocket = true;
+                if (DOM.gestureStatus) {
+                    DOM.gestureStatus.querySelector('.status-text').textContent = 'WS Connected';
+                }
+            });
+            
+            state.socket.on('gesture', (gesture) => {
+                handleGesture(gesture);
+            });
+            
+            state.socket.on('disconnect', () => {
+                console.log('[WS] Disconnected, falling back to polling');
+                state.useWebSocket = false;
+                startPollingFallback();
+            });
+            
+            state.socket.on('connect_error', (error) => {
+                console.log('[WS] Connection error, using polling fallback', error.message);
+                state.useWebSocket = false;
+                if (state.socket) {
+                    state.socket.disconnect();
+                    state.socket = null;
+                }
+                startPollingFallback();
+            });
+            
+            return; // WebSocket will handle updates
+        } catch (e) {
+            console.log('[WS] WebSocket init failed, using polling', e);
+        }
+    } else {
+        console.log('[WS] Socket.IO not available, using polling');
+    }
+    
+    // Fallback to HTTP polling
+    startPollingFallback();
+}
+
+function startPollingFallback() {
+    if (state.useWebSocket) return; // Don't poll if WebSocket is active
+    
     async function poll() {
+        if (state.useWebSocket) return; // Stop if WebSocket reconnected
+        
         try {
             const response = await fetch(`${CONFIG.API_BASE}/api/gesture`);
             const gesture = await response.json();
@@ -365,7 +433,9 @@ function startGesturePolling() {
             }
         }
         
-        state.gesturePolling = setTimeout(poll, CONFIG.POLL_INTERVAL);
+        if (!state.useWebSocket) {
+            state.gesturePolling = setTimeout(poll, CONFIG.POLL_INTERVAL);
+        }
     }
     
     poll();
@@ -384,15 +454,17 @@ function handleGesture(gesture) {
         
         switch (gesture.action) {
             case 'nav_left':
-                if (!state.showDetail && !state.showQR) {
-                    navigateLeft();
-                    flashNavZone('left');
-                }
-                break;
-            case 'nav_right':
+                // Inverted: nav_left action → navigate RIGHT
                 if (!state.showDetail && !state.showQR) {
                     navigateRight();
                     flashNavZone('right');
+                }
+                break;
+            case 'nav_right':
+                // Inverted: nav_right action → navigate LEFT
+                if (!state.showDetail && !state.showQR) {
+                    navigateLeft();
+                    flashNavZone('left');
                 }
                 break;
             case 'detail':
@@ -420,14 +492,16 @@ function handleGesture(gesture) {
     // Skip visual updates if showing QR
     if (state.showQR) return;
     
-    // Update navigation zone visuals
+    // Update navigation zone visuals (inverted to match hand position)
     if (gesture.hand_detected && !state.showDetail) {
         if (gesture.hand_x < 0.25) {
-            DOM.navZoneLeft?.classList.add('active');
-            DOM.navZoneRight?.classList.remove('active');
-        } else if (gesture.hand_x > 0.75) {
+            // Hand on left → will navigate RIGHT
             DOM.navZoneRight?.classList.add('active');
             DOM.navZoneLeft?.classList.remove('active');
+        } else if (gesture.hand_x > 0.75) {
+            // Hand on right → will navigate LEFT
+            DOM.navZoneLeft?.classList.add('active');
+            DOM.navZoneRight?.classList.remove('active');
         } else {
             DOM.navZoneLeft?.classList.remove('active');
             DOM.navZoneRight?.classList.remove('active');
@@ -498,8 +572,13 @@ function updateGestureStatus(gesture) {
                 case 'open_hand':
                     icon = '✋';
                     text = gesture.open_hand_progress > 0 
-                        ? `Open hand ${Math.round(gesture.open_hand_progress * 100)}%` 
+                        ? `Hold ${Math.round(gesture.open_hand_progress * 100)}%` 
                         : 'Open hand';
+                    break;
+                case 'swiping':
+                    icon = '👋';
+                    text = gesture.hand_x < 0.25 ? '→ Swipe RIGHT' : 
+                           gesture.hand_x > 0.75 ? '← Swipe LEFT' : 'Swiping...';
                     break;
                 case 'fist':
                     icon = '✊';
@@ -507,7 +586,7 @@ function updateGestureStatus(gesture) {
                     break;
                 case 'pointing':
                     icon = '☝️';
-                    text = `Hand X: ${Math.round(gesture.hand_x * 100)}%`;
+                    text = `X: ${Math.round(gesture.hand_x * 100)}%`;
                     break;
                 default:
                     icon = '🖐️';
@@ -523,6 +602,7 @@ function updateGestureStatus(gesture) {
         const icon = gesture.hand_detected 
             ? (gesture.gesture_name === 'thumbs_up' ? '👍' : 
                gesture.gesture_name === 'fist' ? '✊' :
+               gesture.gesture_name === 'swiping' ? '👋' :
                gesture.gesture_name === 'open_hand' ? '✋' : '☝️')
             : '❌';
         DOM.pipGestureIcon.textContent = icon;
@@ -547,12 +627,31 @@ function showDetail(event) {
     const displayName = profile.display_name || profile.name || `@${event.pubkey?.substring(0, 8) || 'anon'}`;
     const pubkeyShort = event.pubkey ? event.pubkey.substring(0, 16) + '...' : 'Unknown';
     
-    // Banner - display profile banner if available
+    // Banner - display content image first, then profile banner
     const bannerEl = document.getElementById('detail-banner');
     if (bannerEl) {
-        if (profile.banner) {
-            bannerEl.style.backgroundImage = `url(${profile.banner})`;
-            bannerEl.style.display = 'block';
+        let bannerUrl = null;
+        
+        if (event.images && event.images.length > 0) {
+            // Use first image from content
+            bannerUrl = event.images[0];
+        } else if (profile.banner) {
+            // Fallback to profile banner
+            bannerUrl = profile.banner;
+        }
+        
+        if (bannerUrl) {
+            // Preload image to check if it loads correctly
+            const img = new Image();
+            img.onload = () => {
+                bannerEl.style.backgroundImage = `url(${bannerUrl})`;
+                bannerEl.style.display = 'block';
+            };
+            img.onerror = () => {
+                bannerEl.style.backgroundImage = '';
+                bannerEl.style.display = 'none';
+            };
+            img.src = bannerUrl;
         } else {
             bannerEl.style.backgroundImage = '';
             bannerEl.style.display = 'none';
@@ -615,7 +714,7 @@ function showDetail(event) {
     
     // External links
     document.getElementById('detail-profile-btn').href = 
-        `nostr_profile_viewer.html?hex=${event.pubkey || ''}`;
+        `https://ipfs.copylaradio.com/ipns/copylaradio.com/nostr_profile_viewer.html?hex=${event.pubkey || ''}`;
     document.getElementById('detail-external-btn').href = 
         `https://njump.me/${event.id || ''}`;
     
