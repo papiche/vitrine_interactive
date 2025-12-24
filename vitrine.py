@@ -60,6 +60,17 @@ except ImportError:
     HAS_QRCODE = False
     print("[WARN] qrcode not installed. pip install qrcode[pil]")
 
+# Face Recognition
+try:
+    from face_recognition_module import FaceRecognizer
+    face_recognizer = FaceRecognizer()
+    HAS_FACE_RECOGNITION = True
+    print("[FACE] Face recognition module loaded")
+except ImportError as e:
+    HAS_FACE_RECOGNITION = False
+    face_recognizer = None
+    print(f"[WARN] Face recognition not available: {e}")
+
 # --- CONFIGURATION ---
 HOME = os.path.expanduser("~")
 ASTROPORT_PATH = os.path.join(HOME, ".zen/Astroport.ONE")
@@ -998,11 +1009,23 @@ def api_profile(pubkey):
 
 @app.route('/api/capture', methods=['POST'])
 def api_capture():
-    """Capture photo, upload to IPFS, and post to Nostr"""
+    """Capture photo, upload to IPFS, process faces, and post to Nostr"""
     photo_path = camera.capture_photo()
     
     if not photo_path:
         return jsonify({'success': False, 'error': 'Failed to capture photo'})
+    
+    # Process faces for recognition
+    face_results = []
+    if HAS_FACE_RECOGNITION and face_recognizer:
+        print(f"[CAPTURE] Processing faces in: {photo_path}")
+        face_results = face_recognizer.process_photo(photo_path)
+        if face_results:
+            print(f"[CAPTURE] Found {len(face_results)} faces")
+            for fr in face_results:
+                status = "Recognized" if fr['status'] == 'recognized' else "New visitor"
+                name = fr.get('name') or fr.get('user_id', '')[:12]
+                print(f"[CAPTURE]   - {status}: {name} (visits: {fr.get('visit_count', 1)})")
     
     # Upload to IPFS
     print(f"[CAPTURE] Uploading photo to IPFS: {photo_path}")
@@ -1036,7 +1059,8 @@ def api_capture():
         'ipfs_url': ipfs_url,
         'posted': posted,
         'qr_code': qr_data,
-        'qr_url': 'http://127.0.0.1:54321/g1'
+        'qr_url': 'http://127.0.0.1:54321/g1',
+        'faces': face_results
     })
 
 @app.route('/api/qr')
@@ -1047,6 +1071,83 @@ def api_qr():
         'qr_code': qr_data,
         'url': 'http://127.0.0.1:54321/g1'
     })
+
+# --- FACE RECOGNITION API ---
+
+@app.route('/api/faces/stats')
+def api_faces_stats():
+    """Get face recognition statistics"""
+    if not HAS_FACE_RECOGNITION or not face_recognizer:
+        return jsonify({'error': 'Face recognition not available', 'available': False})
+    
+    stats = face_recognizer.get_stats()
+    stats['available'] = True
+    return jsonify(stats)
+
+@app.route('/api/faces/users')
+def api_faces_users():
+    """List all recognized users"""
+    if not HAS_FACE_RECOGNITION or not face_recognizer:
+        return jsonify({'error': 'Face recognition not available', 'users': []})
+    
+    users = face_recognizer.get_all_users()
+    return jsonify({'users': users, 'count': len(users)})
+
+@app.route('/api/faces/user/<user_id>')
+def api_faces_user(user_id):
+    """Get details for a specific user"""
+    if not HAS_FACE_RECOGNITION or not face_recognizer:
+        return jsonify({'error': 'Face recognition not available'})
+    
+    user = face_recognizer.database.get_user(user_id)
+    if user:
+        return jsonify({
+            'user_id': user_id,
+            'name': user.get('name', ''),
+            'first_seen': user.get('first_seen', ''),
+            'last_seen': user.get('last_seen', ''),
+            'visit_count': user.get('visit_count', 0),
+            'photos': user.get('photos', [])
+        })
+    return jsonify({'error': 'User not found'}), 404
+
+@app.route('/api/faces/user/<user_id>/name', methods=['POST'])
+def api_faces_set_name(user_id):
+    """Set a user's name"""
+    if not HAS_FACE_RECOGNITION or not face_recognizer:
+        return jsonify({'error': 'Face recognition not available'})
+    
+    data = request.get_json() or {}
+    name = data.get('name', '')
+    
+    if face_recognizer.database.set_user_name(user_id, name):
+        return jsonify({'success': True, 'user_id': user_id, 'name': name})
+    return jsonify({'error': 'User not found'}), 404
+
+@app.route('/api/faces/process', methods=['POST'])
+def api_faces_process():
+    """Process a specific photo for face detection"""
+    if not HAS_FACE_RECOGNITION or not face_recognizer:
+        return jsonify({'error': 'Face recognition not available'})
+    
+    data = request.get_json() or {}
+    photo_path = data.get('photo_path', '')
+    
+    if not photo_path or not os.path.exists(photo_path):
+        return jsonify({'error': 'Photo not found'}), 404
+    
+    results = face_recognizer.process_photo(photo_path)
+    return jsonify({'faces': results, 'count': len(results)})
+
+@app.route('/api/faces/batch', methods=['POST'])
+def api_faces_batch():
+    """Process all existing photos (batch training)"""
+    if not HAS_FACE_RECOGNITION or not face_recognizer:
+        return jsonify({'error': 'Face recognition not available'})
+    
+    from face_recognition_module import process_existing_photos
+    stats = process_existing_photos()
+    return jsonify({'success': True, 'stats': stats})
 
 @app.route('/api/set_index', methods=['POST'])
 def api_set_index():

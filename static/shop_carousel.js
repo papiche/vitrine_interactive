@@ -16,6 +16,7 @@ const CONFIG = {
     API_BASE: '',  // Same origin
     POLL_INTERVAL: 50,  // ms - Gesture polling frequency
     EVENTS_REFRESH: 30000,  // ms - Nostr events refresh
+    FACE_STATS_REFRESH: 60000,  // ms - Face stats refresh
     QR_DISPLAY_TIME: 10,  // seconds
     THUMBS_UP_HOLD: 1.5,  // seconds
     OPEN_HAND_HOLD: 1.0,  // seconds - Hold to show detail
@@ -42,6 +43,13 @@ const state = {
     // WebSocket
     socket: null,
     useWebSocket: false,
+    // Face Recognition
+    faceStats: {
+        total_users: 0,
+        total_embeddings: 0,
+        named_users: 0
+    },
+    lastFaces: [],  // Last detected faces from capture
 };
 
 // === DOM Elements ===
@@ -68,6 +76,7 @@ document.addEventListener('DOMContentLoaded', () => {
     startGesturePolling();
     initMouseNavigation();
     initKeyboardNavigation();
+    loadFaceStats();
 });
 
 function initDOM() {
@@ -755,8 +764,21 @@ async function capturePhoto() {
                 console.log('[Capture] IPFS CID:', data.ipfs_cid);
             }
             
-            // Show QR with IPFS info
-            showQR(data.qr_code, data.ipfs_url, data.ipfs_cid);
+            // Log face recognition results
+            if (data.faces && data.faces.length > 0) {
+                console.log('[Capture] Faces detected:', data.faces.length);
+                state.lastFaces = data.faces;
+                data.faces.forEach(face => {
+                    const status = face.status === 'recognized' ? '✅ Recognized' : '🆕 New visitor';
+                    console.log(`[Capture] ${status}: ${face.name || face.user_id} (visits: ${face.visit_count})`);
+                });
+            }
+            
+            // Show QR with IPFS info and face results
+            showQR(data.qr_code, data.ipfs_url, data.ipfs_cid, data.faces);
+            
+            // Refresh face stats
+            loadFaceStats();
         } else {
             console.error('[Capture] Failed:', data.error);
             if (captureStatus) {
@@ -824,7 +846,7 @@ function hideOpenHandProgress() {
 }
 
 // === QR Code Display ===
-function showQR(qrData, ipfsUrl = null, ipfsCid = null) {
+function showQR(qrData, ipfsUrl = null, ipfsCid = null, faces = null) {
     if (!DOM.qrOverlay) return;
     
     state.showQR = true;
@@ -840,6 +862,42 @@ function showQR(qrData, ipfsUrl = null, ipfsCid = null) {
     const qrImg = document.getElementById('qr-image');
     if (qrImg && qrData) {
         qrImg.src = `data:image/png;base64,${qrData}`;
+    }
+    
+    // Show face recognition results
+    const faceResultsEl = document.getElementById('face-results');
+    const faceListEl = document.getElementById('face-list');
+    
+    if (faceResultsEl && faceListEl) {
+        if (faces && faces.length > 0) {
+            faceListEl.innerHTML = '';
+            
+            faces.forEach(face => {
+                const isRecognized = face.status === 'recognized';
+                const statusClass = isRecognized ? 'recognized' : 'new-visitor';
+                const welcomeClass = isRecognized && face.visit_count > 1 ? 'welcome-back' : '';
+                const displayName = face.name || (isRecognized ? `Visitor ${face.user_id.slice(-6)}` : 'New visitor');
+                
+                const faceHtml = `
+                    <div class="face-item ${statusClass} ${welcomeClass}">
+                        <div class="face-info">
+                            <span class="face-name ${statusClass}">${escapeHtml(displayName)}</span>
+                            <span class="face-meta">
+                                <span class="face-badge ${statusClass}">
+                                    ${isRecognized ? '✓ Known' : '★ New'}
+                                </span>
+                                ${face.visit_count > 1 ? `<span class="face-visits">👁 ${face.visit_count} visits</span>` : ''}
+                            </span>
+                        </div>
+                    </div>
+                `;
+                faceListEl.insertAdjacentHTML('beforeend', faceHtml);
+            });
+            
+            faceResultsEl.classList.add('has-faces');
+        } else {
+            faceResultsEl.classList.remove('has-faces');
+        }
     }
     
     // Show IPFS info if available
@@ -1006,6 +1064,51 @@ function formatTimeAgo(timestamp) {
     return date.toLocaleDateString();
 }
 
+// === Face Recognition ===
+async function loadFaceStats() {
+    try {
+        const response = await fetch(`${CONFIG.API_BASE}/api/faces/stats`);
+        const data = await response.json();
+        
+        if (data.available) {
+            state.faceStats = {
+                total_users: data.total_users || 0,
+                total_embeddings: data.total_embeddings || 0,
+                named_users: data.named_users || 0
+            };
+            
+            updateFaceStatsUI();
+        }
+    } catch (error) {
+        console.log('[FaceStats] Not available:', error.message);
+    }
+    
+    // Schedule refresh
+    setTimeout(loadFaceStats, CONFIG.FACE_STATS_REFRESH);
+}
+
+function updateFaceStatsUI() {
+    // Update status bar
+    const faceStatusText = document.getElementById('face-status-text');
+    if (faceStatusText) {
+        const count = state.faceStats.total_users;
+        faceStatusText.textContent = `${count} visitor${count !== 1 ? 's' : ''}`;
+    }
+    
+    // Update floating widget
+    const faceStatsWidget = document.getElementById('face-stats-widget');
+    const faceStatsCount = document.getElementById('face-stats-count');
+    
+    if (faceStatsWidget && faceStatsCount) {
+        if (state.faceStats.total_users > 0) {
+            faceStatsCount.textContent = state.faceStats.total_users;
+            faceStatsWidget.classList.add('visible');
+        } else {
+            faceStatsWidget.classList.remove('visible');
+        }
+    }
+}
+
 // === Export for debugging ===
 window.VitrineApp = {
     state,
@@ -1016,5 +1119,6 @@ window.VitrineApp = {
     hideDetail,
     capturePhoto,
     loadEvents,
+    loadFaceStats,
 };
 

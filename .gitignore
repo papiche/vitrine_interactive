@@ -2,6 +2,10 @@
 photos/*
 !photos/.gitkeep
 
+# Face recognition database - personal data, never commit
+faces/
+embeddings.json
+
 # Python cache
 __pycache__/
 *.py[cod]
@@ -31,5 +35,6 @@ upload_*.json
 # OS files
 .DS_Store
 Thumbs.db
+
 
 

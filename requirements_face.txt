@@ -1,0 +1,8 @@
+# Face Recognition dependencies
+face_recognition>=1.3.0
+dlib>=19.24.0
+numpy>=1.21.0
+opencv-python>=4.5.0
+
+# Alternative (already installed via vitrine):
+# mediapipe>=0.10.0

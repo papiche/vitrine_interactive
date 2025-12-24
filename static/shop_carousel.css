@@ -796,6 +796,224 @@ body {
     text-decoration: underline;
 }
 
+/* === Face Recognition Results === */
+.face-results {
+    display: none;
+    margin-bottom: var(--space-md);
+    padding: var(--space-md);
+    background: linear-gradient(135deg, rgba(0, 212, 255, 0.1) 0%, rgba(179, 102, 255, 0.1) 100%);
+    border-radius: var(--radius-md);
+    border: 1px solid rgba(0, 212, 255, 0.3);
+}
+
+.face-results.has-faces {
+    display: block;
+    animation: faceSlideIn 0.5s ease-out;
+}
+
+@keyframes faceSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.face-results-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    margin-bottom: var(--space-sm);
+    padding-bottom: var(--space-sm);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.face-icon {
+    font-size: 1.5rem;
+    filter: drop-shadow(0 0 8px var(--accent-cyan));
+}
+
+.face-title {
+    font-weight: 600;
+    color: var(--accent-cyan);
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.face-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+    justify-content: center;
+}
+
+.face-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: var(--space-sm) var(--space-md);
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    transition: all var(--transition-fast);
+}
+
+.face-item:hover {
+    border-color: var(--accent-cyan);
+    transform: scale(1.02);
+}
+
+.face-item.recognized {
+    background: linear-gradient(135deg, rgba(0, 255, 136, 0.15) 0%, rgba(0, 200, 100, 0.1) 100%);
+    border-color: rgba(0, 255, 136, 0.4);
+}
+
+.face-item.new-visitor {
+    background: linear-gradient(135deg, rgba(255, 165, 0, 0.15) 0%, rgba(255, 200, 0, 0.1) 100%);
+    border-color: rgba(255, 165, 0, 0.4);
+}
+
+.face-thumb {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid var(--accent-cyan);
+}
+
+.face-thumb.recognized {
+    border-color: var(--accent-green);
+}
+
+.face-thumb.new-visitor {
+    border-color: var(--accent-gold);
+}
+
+.face-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.face-name {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+}
+
+.face-name.recognized {
+    color: var(--accent-green);
+}
+
+.face-name.new-visitor {
+    color: var(--accent-gold);
+}
+
+.face-meta {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.face-visits {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 0.7rem;
+    color: var(--accent-purple);
+    background: rgba(179, 102, 255, 0.2);
+    padding: 2px 6px;
+    border-radius: 10px;
+    margin-left: var(--space-xs);
+}
+
+.face-badge {
+    font-size: 0.65rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.face-badge.recognized {
+    background: rgba(0, 255, 136, 0.2);
+    color: var(--accent-green);
+}
+
+.face-badge.new-visitor {
+    background: rgba(255, 165, 0, 0.2);
+    color: var(--accent-gold);
+}
+
+/* Face Stats Widget */
+.face-stats-widget {
+    position: fixed;
+    top: 80px;
+    right: var(--space-lg);
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: var(--space-sm) var(--space-md);
+    background: var(--bg-glass);
+    backdrop-filter: blur(12px);
+    border-radius: var(--radius-md);
+    border: 1px solid rgba(0, 212, 255, 0.3);
+    z-index: 20;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    opacity: 0;
+    transform: translateX(20px);
+}
+
+.face-stats-widget.visible {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.face-stats-widget:hover {
+    border-color: var(--accent-cyan);
+    box-shadow: var(--glow-cyan);
+}
+
+.face-stats-icon {
+    font-size: 1.25rem;
+}
+
+.face-stats-count {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--accent-cyan);
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.face-stats-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+/* Status item for faces */
+.status-item-face {
+    background: linear-gradient(135deg, rgba(0, 212, 255, 0.1) 0%, rgba(179, 102, 255, 0.1) 100%);
+    border: 1px solid rgba(0, 212, 255, 0.2);
+}
+
+.status-item-face:hover {
+    border-color: var(--accent-cyan);
+}
+
+/* Welcome back animation */
+@keyframes welcomeBack {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.1); box-shadow: 0 0 20px var(--accent-green); }
+    100% { transform: scale(1); }
+}
+
+.face-item.welcome-back {
+    animation: welcomeBack 0.8s ease-out;
+}
+
 /* Capture Status Indicator */
 .capture-status {
     position: fixed;
