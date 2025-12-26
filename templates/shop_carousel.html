@@ -16,6 +16,25 @@
     <!-- Matrix Background Effect -->
     <canvas id="matrix-bg" class="matrix-background"></canvas>
     
+    <!-- Star Wars Scrolling ICO Messages (visible in dark mode / no hand detected) -->
+    <div class="scroll-banner" id="scroll-banner">
+        <div class="scroll-wrapper">
+            <div class="fade-top"></div>
+            <div class="scroll-content" id="scroll-content">
+                <!-- Messages will be inserted by JS -->
+            </div>
+            <div class="fade-bottom"></div>
+        </div>
+    </div>
+    
+    <!-- Face Detected Indicator (show CTA to raise hand) -->
+    <div class="face-detected-indicator" id="face-detected-indicator">
+        <span class="face-icon">👤</span>
+        <span class="face-text">Bienvenue !</span>
+        <span class="hand-icon">👋</span>
+        <span class="face-hint">Levez la main pour interagir</span>
+    </div>
+    
     <!-- Main Container -->
     <div id="app" class="app-container">
         <!-- Header -->
@@ -107,6 +126,12 @@
                 <div class="qr-header">
                     <span class="qr-title">📸 Photo Captured!</span>
                     <span class="qr-subtitle">Scan to access your Ğ1 wallet</span>
+                </div>
+                
+                <!-- Captured Photo Preview -->
+                <div class="captured-photo" id="captured-photo">
+                    <img id="captured-photo-img" src="" alt="Your photo">
+                    <div class="captured-photo-label">📸 Your Photo</div>
                 </div>
                 
                 <!-- Face Recognition Results -->

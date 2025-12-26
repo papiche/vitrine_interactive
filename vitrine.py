@@ -98,10 +98,10 @@ ZONE_CENTER = (0.35, 0.65)  # Center 30% -> Detail view
 
 # Gesture thresholds
 SWIPE_COOLDOWN = 0.5  # Seconds between swipes
-THUMBS_UP_HOLD_TIME = 1.5  # Seconds to hold thumbs up
-OPEN_HAND_HOLD_TIME = 1.0  # Seconds to hold open hand for detail view
+THUMBS_UP_HOLD_TIME = 3.0  # Seconds to hold thumbs up (doubled to avoid false triggers)
+OPEN_HAND_HOLD_TIME = 2.0  # Seconds to hold open hand for detail view (doubled)
 QR_DISPLAY_TIME = 10  # Seconds to display QR code
-DARK_MODE_TIMEOUT = 60  # Seconds without hand to switch back to dark mode
+DARK_MODE_TIMEOUT = 30  # Seconds without hand to switch back to dark mode
 
 # --- FLASK APP ---
 app = Flask(__name__, 
@@ -136,6 +136,7 @@ class GestureState:
         self.current_index = 0  # Current message index
         self.show_detail = False
         self.detail_opened = False  # Track if detail was opened by gesture
+        self.detail_close_time = 0  # Timestamp when detail was closed (for cooldown)
         self.show_qr = False
         self.qr_start_time = 0
         self.photo_captured = False
@@ -143,7 +144,14 @@ class GestureState:
         # Light/Dark mode based on hand presence
         self.light_mode = False
         self.last_hand_seen = 0  # Timestamp when hand was last seen
+        # Face detection in live feed
+        self.face_detected = False
+        self.face_count = 0
+        self.last_face_seen = 0  # Timestamp when face was last seen
         self.lock = threading.Lock()
+
+# Cooldown after closing detail before thumbs up can trigger (seconds)
+THUMBS_UP_COOLDOWN_AFTER_DETAIL = 2.0
 
 # Movement threshold to switch from "open hand hold" to "swipe" (normalized 0-1)
 HAND_MOVEMENT_THRESHOLD = 0.08  # 8% of screen width - more sensitive to movement
@@ -359,14 +367,21 @@ class CameraHandler:
         self.hands = self.mp_hands.Hands(
             static_image_mode=False,
             max_num_hands=1,
-            min_detection_confidence=0.7,
-            min_tracking_confidence=0.5
+            model_complexity=0,  # Lightest model for RPi5
+            min_detection_confidence=0.6,
+            min_tracking_confidence=0.4
         )
         self.mp_draw = mp.solutions.drawing_utils
         self.running = False
         self.frame_lock = threading.Lock()
         self.current_frame = None
         self.processed_frame = None
+        
+        # Face detection using OpenCV Haar Cascade (lightweight)
+        cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+        self.face_cascade = cv2.CascadeClassifier(cascade_path)
+        self.face_detection_interval = 30  # Detect faces every N frames (~1x per second at 30fps) - optimized for RPi5
+        self.frame_count = 0
     
     def start(self):
         """Start camera capture"""
@@ -527,7 +542,16 @@ class CameraHandler:
             if is_thumbs_up:
                 gesture_state.gesture_name = "thumbs_up"
                 gesture_state.open_hand_start = 0  # Reset open hand timer
-                if gesture_state.thumbs_up_start == 0:
+                
+                # Check if we're still in cooldown after closing detail
+                time_since_detail_close = current_time - gesture_state.detail_close_time
+                in_cooldown = gesture_state.detail_close_time > 0 and time_since_detail_close < THUMBS_UP_COOLDOWN_AFTER_DETAIL
+                
+                if in_cooldown:
+                    # Ignore thumbs up during cooldown period
+                    gesture_state.thumbs_up_start = 0
+                    gesture_state.gesture_name = "thumbs_up_cooldown"
+                elif gesture_state.thumbs_up_start == 0:
                     # Start tracking thumbs up
                     gesture_state.thumbs_up_start = current_time
                     gesture_state.thumbs_up_start_x = gesture_state.hand_x
@@ -588,6 +612,7 @@ class CameraHandler:
                         gesture_state.action = "detail_close"
                         gesture_state.show_detail = False
                         gesture_state.detail_opened = False
+                        gesture_state.detail_close_time = current_time  # Start cooldown
                 else:
                     gesture_state.gesture_name = "pointing"
                     gesture_state.open_hand_start = 0
@@ -639,6 +664,7 @@ class CameraHandler:
                     gesture_state.gesture_name = "none"
                     gesture_state.thumbs_up_start = 0
                     gesture_state.open_hand_start = 0
+                    gesture_state.detail_close_time = 0  # Reset cooldown when hand disappears
                     
                     current_time = time.time()
                     
@@ -656,11 +682,17 @@ class CameraHandler:
                         if time_since_hand >= DARK_MODE_TIMEOUT:
                             gesture_state.light_mode = False
             
+            # Face detection (every N frames for performance)
+            self.frame_count += 1
+            if self.frame_count % self.face_detection_interval == 0:
+                self._detect_faces(frame)
+            
             # Draw gesture info on frame
             with gesture_state.lock:
                 action = gesture_state.action
                 gesture = gesture_state.gesture_name
                 hand_x = gesture_state.hand_x
+                face_count = gesture_state.face_count
             
             # Draw zone indicators
             h, w = frame.shape[:2]
@@ -673,16 +705,69 @@ class CameraHandler:
             cv2.putText(frame, f"Action: {action}", (10, 60), 
                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
             
+            # Draw face count if detected
+            if face_count > 0:
+                cv2.putText(frame, f"Faces: {face_count}", (10, 90), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 255), 2)
+            
             with self.frame_lock:
                 self.current_frame = frame.copy()
                 self.processed_frame = frame
+            
+            # Small delay to limit CPU usage on RPi5 (~20fps max)
+            time.sleep(0.02)
+    
+    def _detect_faces(self, frame):
+        """Detect faces in the current frame using OpenCV Haar Cascade (optimized for RPi5)"""
+        global gesture_state
+        
+        # Downscale for faster processing (33% size for RPi5)
+        scale = 0.33
+        small_frame = cv2.resize(frame, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+        
+        # Convert to grayscale for face detection
+        gray = cv2.cvtColor(small_frame, cv2.COLOR_BGR2GRAY)
+        
+        # Detect faces with parameters optimized for RPi5
+        faces = self.face_cascade.detectMultiScale(
+            gray,
+            scaleFactor=1.3,  # Faster with larger scale factor
+            minNeighbors=3,   # Slightly less strict
+            minSize=(20, 20), # Smaller min size due to downscale
+            flags=cv2.CASCADE_SCALE_IMAGE
+        )
+        
+        face_count = len(faces)
+        current_time = time.time()
+        
+        with gesture_state.lock:
+            if face_count > 0:
+                gesture_state.face_detected = True
+                gesture_state.face_count = face_count
+                gesture_state.last_face_seen = current_time
+            else:
+                # Short grace period to avoid flickering (1.5s for faster dark mode return)
+                if gesture_state.last_face_seen > 0:
+                    time_since_face = current_time - gesture_state.last_face_seen
+                    if time_since_face > 1.5:
+                        gesture_state.face_detected = False
+                        gesture_state.face_count = 0
+        
+        # Draw face rectangles on original frame (scale back coordinates)
+        for (x, y, w, h) in faces:
+            # Scale coordinates back to original size
+            x, y, w, h = int(x/scale), int(y/scale), int(w/scale), int(h/scale)
+            cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 255), 2)
+            cv2.putText(frame, "Face", (x, y-10), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 1)
     
     def get_frame(self):
-        """Get current frame as JPEG bytes"""
+        """Get current frame as JPEG bytes (optimized for RPi5)"""
         with self.frame_lock:
             if self.processed_frame is None:
                 return None
-            ret, jpeg = cv2.imencode('.jpg', self.processed_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            # Lower quality for faster streaming on RPi5
+            ret, jpeg = cv2.imencode('.jpg', self.processed_frame, [cv2.IMWRITE_JPEG_QUALITY, 60])
             return jpeg.tobytes() if ret else None
     
     def capture_photo(self):
@@ -988,7 +1073,9 @@ def api_gesture():
             'open_hand_progress': open_hand_progress,
             'thumbs_up_progress': thumbs_up_progress,
             'light_mode': gesture_state.light_mode,
-            'time_until_dark': time_until_dark
+            'time_until_dark': time_until_dark,
+            'face_detected': gesture_state.face_detected,
+            'face_count': gesture_state.face_count
         }
         
         # Reset action after reading
@@ -1052,9 +1139,15 @@ def api_capture():
         gesture_state.qr_start_time = time.time()
         gesture_state.last_photo_path = photo_path
     
+    # Get photo filename for display
+    photo_filename = os.path.basename(photo_path)
+    photo_url = f"/photos/{photo_filename}"
+    
     return jsonify({
         'success': True,
         'photo_path': photo_path,
+        'photo_url': photo_url,
+        'photo_filename': photo_filename,
         'ipfs_cid': ipfs_cid,
         'ipfs_url': ipfs_url,
         'posted': posted,
@@ -1070,6 +1163,32 @@ def api_qr():
     return jsonify({
         'qr_code': qr_data,
         'url': 'http://127.0.0.1:54321/g1'
+    })
+
+@app.route('/api/config')
+def api_config():
+    """Get vitrine configuration (scroll messages, etc.)"""
+    config_path = Path(__file__).parent / "vitrine_config.json"
+    
+    if config_path.exists():
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            return jsonify(config)
+        except Exception as e:
+            print(f"[CONFIG] Error loading config: {e}")
+    
+    # Default config if file not found
+    return jsonify({
+        'scroll_messages': {
+            'default': [
+                "🌍 UPlanet - L'Internet Libre et Coopératif",
+                "👋 Levez la main pour interagir",
+                "👍 Pouce levé = Photo + Face ID"
+            ]
+        },
+        'scroll_speed': 80,
+        'scroll_color': '#00d4ff'
     })
 
 # --- FACE RECOGNITION API ---

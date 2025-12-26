@@ -50,6 +50,12 @@ const state = {
         named_users: 0
     },
     lastFaces: [],  // Last detected faces from capture
+    // Config / Scroll
+    config: null,
+    scrollMessages: [],
+    // Face detection in live feed
+    faceDetected: false,
+    faceCount: 0,
 };
 
 // === DOM Elements ===
@@ -72,6 +78,7 @@ const DOM = {
 document.addEventListener('DOMContentLoaded', () => {
     initDOM();
     initMatrixBackground();
+    loadConfig();
     loadEvents();
     startGesturePolling();
     initMouseNavigation();
@@ -454,8 +461,11 @@ function handleGesture(gesture) {
     // Update status display
     updateGestureStatus(gesture);
     
-    // Handle light/dark mode
-    updateThemeMode(gesture.light_mode, gesture.time_until_dark);
+    // Handle face detection (for scroll slow-down)
+    updateFaceDetection(gesture.face_detected, gesture.face_count, gesture.hand_detected);
+    
+    // Handle light/dark mode (pass handDetected to prevent false positives)
+    updateThemeMode(gesture.light_mode, gesture.time_until_dark, gesture.hand_detected);
     
     // Handle actions
     if (gesture.action !== state.lastAction) {
@@ -544,11 +554,19 @@ function handleGesture(gesture) {
 }
 
 // === Theme Mode ===
-function updateThemeMode(lightMode, timeUntilDark) {
-    if (lightMode !== state.lightMode) {
-        state.lightMode = lightMode;
-        document.body.classList.toggle('light-mode', lightMode);
-        console.log(`[Theme] Switched to ${lightMode ? 'LIGHT' : 'DARK'} mode`);
+function updateThemeMode(lightMode, timeUntilDark, handDetected) {
+    // ONLY switch to light mode if hand is CURRENTLY detected
+    // Face detection alone does NOT trigger light mode
+    // Light mode persists for timeUntilDark seconds after hand disappears
+    const effectiveLightMode = handDetected ? true : (timeUntilDark > 0 ? lightMode : false);
+    
+    if (effectiveLightMode !== state.lightMode) {
+        state.lightMode = effectiveLightMode;
+        document.body.classList.toggle('light-mode', effectiveLightMode);
+        console.log(`[Theme] Switched to ${effectiveLightMode ? 'LIGHT' : 'DARK'} mode`);
+        
+        // Show/hide scroll banner based on mode
+        updateScrollBanner(!effectiveLightMode);
     }
     
     state.timeUntilDark = timeUntilDark;
@@ -556,7 +574,7 @@ function updateThemeMode(lightMode, timeUntilDark) {
     // Update countdown display if exists
     const countdownEl = document.getElementById('dark-mode-countdown');
     if (countdownEl) {
-        if (timeUntilDark > 0 && !state.showDetail) {
+        if (timeUntilDark > 0 && !state.showDetail && !handDetected) {
             countdownEl.textContent = `Dark mode in ${Math.ceil(timeUntilDark)}s`;
             countdownEl.style.display = 'block';
         } else {
@@ -630,6 +648,9 @@ function showDetail(event) {
     if (!DOM.detailPanel || !event) return;
     
     state.showDetail = true;
+    
+    // Hide scroll banner when showing detail
+    updateScrollBanner(false);
     
     // Get profile data
     const profile = event.profile || {};
@@ -735,6 +756,12 @@ function hideDetail() {
     if (!state.showDetail) return;
     state.showDetail = false;
     DOM.detailPanel?.classList.remove('visible');
+    
+    // Restore scroll banner if in dark mode
+    if (!state.lightMode) {
+        updateScrollBanner(true);
+    }
+    
     console.log('[Detail] Closed');
 }
 
@@ -774,8 +801,8 @@ async function capturePhoto() {
                 });
             }
             
-            // Show QR with IPFS info and face results
-            showQR(data.qr_code, data.ipfs_url, data.ipfs_cid, data.faces);
+            // Show QR with IPFS info, face results, and captured photo
+            showQR(data.qr_code, data.ipfs_url, data.ipfs_cid, data.faces, data.photo_url);
             
             // Refresh face stats
             loadFaceStats();
@@ -846,16 +873,30 @@ function hideOpenHandProgress() {
 }
 
 // === QR Code Display ===
-function showQR(qrData, ipfsUrl = null, ipfsCid = null, faces = null) {
+function showQR(qrData, ipfsUrl = null, ipfsCid = null, faces = null, photoUrl = null) {
     if (!DOM.qrOverlay) return;
     
     state.showQR = true;
     state.qrCountdown = CONFIG.QR_DISPLAY_TIME;
     
+    // Hide scroll banner when showing QR
+    updateScrollBanner(false);
+    
     // Hide capture status
     const captureStatus = document.getElementById('capture-status');
     if (captureStatus) {
         captureStatus.classList.remove('visible');
+    }
+    
+    // Show captured photo
+    const capturedPhotoEl = document.getElementById('captured-photo');
+    const capturedPhotoImg = document.getElementById('captured-photo-img');
+    
+    if (capturedPhotoEl && capturedPhotoImg && photoUrl) {
+        capturedPhotoImg.src = photoUrl;
+        capturedPhotoEl.classList.add('visible');
+    } else if (capturedPhotoEl) {
+        capturedPhotoEl.classList.remove('visible');
     }
     
     // Set QR image
@@ -941,6 +982,23 @@ function showQR(qrData, ipfsUrl = null, ipfsCid = null, faces = null) {
 function hideQR() {
     state.showQR = false;
     DOM.qrOverlay?.classList.remove('visible');
+    
+    // Hide captured photo
+    const capturedPhotoEl = document.getElementById('captured-photo');
+    if (capturedPhotoEl) {
+        capturedPhotoEl.classList.remove('visible');
+    }
+    
+    // Hide face results
+    const faceResultsEl = document.getElementById('face-results');
+    if (faceResultsEl) {
+        faceResultsEl.classList.remove('has-faces');
+    }
+    
+    // Restore scroll banner if in dark mode
+    if (!state.lightMode) {
+        updateScrollBanner(true);
+    }
     
     if (state.qrInterval) {
         clearInterval(state.qrInterval);
@@ -1062,6 +1120,121 @@ function formatTimeAgo(timestamp) {
     
     const date = new Date(timestamp * 1000);
     return date.toLocaleDateString();
+}
+
+// === Config & Scroll Banner ===
+async function loadConfig() {
+    try {
+        const response = await fetch(`${CONFIG.API_BASE}/api/config`);
+        state.config = await response.json();
+        
+        // Get messages based on browser language
+        const lang = navigator.language.substring(0, 2);
+        const messages = state.config.scroll_messages;
+        state.scrollMessages = messages[lang] || messages['fr'] || messages['default'] || [];
+        
+        // Initialize scroll banner
+        initScrollBanner();
+        
+        console.log(`[Config] Loaded ${state.scrollMessages.length} scroll messages`);
+    } catch (error) {
+        console.log('[Config] Using default config:', error.message);
+        state.scrollMessages = [
+            "🌍 UPlanet - L'Internet Libre et Coopératif",
+            "👋 Levez la main pour interagir",
+            "👍 Pouce levé = Photo + Face ID"
+        ];
+        initScrollBanner();
+    }
+}
+
+function initScrollBanner() {
+    const scrollContent = document.getElementById('scroll-content');
+    if (!scrollContent || state.scrollMessages.length === 0) return;
+    
+    // Build Star Wars opening crawl style content
+    let html = '';
+    const separator = '<span class="scroll-separator">· · ·</span>';
+    
+    // Title
+    html += '<span class="scroll-message cta">🌍 UPlanet</span>';
+    html += '<span class="scroll-message highlight">L\'Internet Libre & Coopératif</span>';
+    html += separator;
+    
+    // Add messages with separators
+    state.scrollMessages.forEach((msg, idx) => {
+        // Highlight pricing messages
+        const isHighlight = msg.includes('PALIER') || msg.includes('TIER') || msg.includes('€');
+        const isCTA = msg.includes('👋') || msg.includes('main') || msg.includes('hand') || msg.includes('👍');
+        
+        let className = 'scroll-message';
+        if (isCTA) className += ' cta';
+        else if (isHighlight) className += ' highlight';
+        
+        html += `<span class="${className}">${escapeHtml(msg)}</span>`;
+    });
+    
+    // Final CTA
+    html += separator;
+    html += '<span class="scroll-message cta">👋 Levez la main pour interagir !</span>';
+    html += '<span class="scroll-message highlight">👍 Pouce levé = Photo + Inscription</span>';
+    html += separator;
+    
+    // Duplicate content for seamless loop
+    html += html;
+    
+    scrollContent.innerHTML = html;
+    
+    // Initially show banner if in dark mode
+    if (!state.lightMode) {
+        updateScrollBanner(true);
+    }
+}
+
+function updateScrollBanner(show) {
+    const banner = document.getElementById('scroll-banner');
+    if (banner) {
+        if (show && !state.showDetail && !state.showQR) {
+            banner.classList.add('visible');
+        } else {
+            banner.classList.remove('visible');
+        }
+    }
+}
+
+function updateFaceDetection(faceDetected, faceCount, handDetected) {
+    const prevFaceDetected = state.faceDetected;
+    state.faceDetected = faceDetected;
+    state.faceCount = faceCount || 0;
+    
+    const banner = document.getElementById('scroll-banner');
+    const indicator = document.getElementById('face-detected-indicator');
+    
+    // Only show face effects in dark mode (no hand detected)
+    const showFaceEffects = faceDetected && !handDetected && !state.lightMode && !state.showDetail && !state.showQR;
+    
+    // Slow down scroll when face detected
+    if (banner) {
+        if (showFaceEffects) {
+            banner.classList.add('face-detected');
+        } else {
+            banner.classList.remove('face-detected');
+        }
+    }
+    
+    // Show/hide face indicator
+    if (indicator) {
+        if (showFaceEffects) {
+            indicator.classList.add('visible');
+        } else {
+            indicator.classList.remove('visible');
+        }
+    }
+    
+    // Log face detection changes
+    if (faceDetected !== prevFaceDetected) {
+        console.log(`[Face] ${faceDetected ? `Detected ${faceCount} face(s) - slowing scroll` : 'No face - normal speed'}`);
+    }
 }
 
 // === Face Recognition ===

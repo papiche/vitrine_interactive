@@ -1,0 +1,41 @@
+{
+  "scroll_messages": {
+    "fr": [
+      "🌍 Devenez Bâtisseur de l'Internet Libre",
+      "💚 ICO ẐEN / CopyLaRadio : Construisez et possédez l'infrastructure d'un web décentralisé",
+      "🔒 Vos données, vos règles. Pas de surveillance GAFAM ici.",
+      "🚀 Propulsé par IPFS, Nostr et l'économie coopérative",
+      "💰 PALIER SOUTIEN 50€ : MULTIPASS 1 an + 1 part sociale SCIC",
+      "🏗️ PALIER BÂTISSEUR 250€ : Part infrastructure ♥BOX + Revenus passifs en Ẑen",
+      "👥 PALIER COOPÉRATEUR 1000€ : Siège au conseil de gouvernance",
+      "🤝 SCIC CopyLaRadio : Le pouvoir reste entre vos mains",
+      "✨ Le Ẑen (Ẑ) : Unité de compte stable adossée à l'économie réelle",
+      "👋 Levez la main pour interagir avec la vitrine",
+      "👍 Pouce levé = Photo + Reconnaissance Faciale"
+    ],
+    "en": [
+      "🌍 Become a Builder of the Free Internet",
+      "💚 ẐEN / CopyLaRadio ICO: Build and own decentralized web infrastructure",
+      "🔒 Your data, your rules. No GAFAM surveillance here.",
+      "🚀 Powered by IPFS, Nostr and cooperative economics",
+      "💰 SUPPORTER TIER €50: 1 year MULTIPASS + 1 SCIC share",
+      "🏗️ BUILDER TIER €250: ♥BOX infrastructure share + Passive income in Ẑen",
+      "👥 COOPERATOR TIER €1000: Seat on governance council",
+      "🤝 SCIC CopyLaRadio: Power stays in your hands",
+      "✨ Ẑen (Ẑ): Stable unit backed by real economy",
+      "👋 Raise your hand to interact",
+      "👍 Thumbs up = Photo + Face Recognition"
+    ],
+    "default": [
+      "🌍 UPlanet - L'Internet Libre et Coopératif",
+      "👋 Levez la main pour interagir",
+      "👍 Pouce levé = Photo + Face ID",
+      "💚 Rejoignez l'aventure sur copylaradio.com"
+    ]
+  },
+  "scroll_speed": 80,
+  "scroll_color": "#00d4ff",
+  "ico_url": "https://copylaradio.com/ico",
+  "logo_url": "http://127.0.0.1:8080/ipfs/QmfBK5h8R4LjS2qMtHKze3nnFrtdm85pCbUw3oPSirik5M/logo.uplanet.png"
+}
+

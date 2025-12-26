@@ -145,6 +145,245 @@ body {
     pointer-events: none;
 }
 
+/* === Star Wars Opening Crawl Effect (Dark Mode) === */
+.scroll-banner {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    overflow: hidden;
+    z-index: 5;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 1s ease, visibility 1s ease;
+    pointer-events: none;
+    background: radial-gradient(ellipse at bottom, #1a1a2e 0%, #0a0a0f 100%);
+}
+
+.scroll-banner.visible {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* Star field effect */
+.scroll-banner::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-image: 
+        radial-gradient(2px 2px at 20px 30px, white, transparent),
+        radial-gradient(2px 2px at 40px 70px, rgba(255,255,255,0.8), transparent),
+        radial-gradient(1px 1px at 90px 40px, white, transparent),
+        radial-gradient(2px 2px at 160px 120px, rgba(255,255,255,0.6), transparent),
+        radial-gradient(1px 1px at 230px 80px, white, transparent),
+        radial-gradient(2px 2px at 300px 150px, rgba(255,255,255,0.7), transparent);
+    background-size: 350px 200px;
+    animation: twinkle 4s ease-in-out infinite;
+    opacity: 0.5;
+}
+
+@keyframes twinkle {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 0.8; }
+}
+
+/* The perspective container - Star Wars style */
+.scroll-wrapper {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+}
+
+/* Fade gradients for smooth appearance/disappearance */
+.scroll-banner .fade-top {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 20%;
+    background: linear-gradient(to bottom, #0a0a0f 0%, #0a0a0f 30%, transparent 100%);
+    z-index: 10;
+    pointer-events: none;
+}
+
+.scroll-banner .fade-bottom {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 20%;
+    background: linear-gradient(to top, #0a0a0f 0%, #0a0a0f 30%, transparent 100%);
+    z-index: 10;
+    pointer-events: none;
+}
+
+/* The scrolling content - responsive Star Wars style */
+.scroll-content {
+    position: absolute;
+    width: 80%;
+    max-width: 1200px;
+    top: 100%;
+    text-align: center;
+    font-size: clamp(18px, 2.5vw, 32px);
+    line-height: 1.6;
+    color: var(--accent-cyan);
+    animation: starWarsCrawl 40s linear infinite;
+    box-sizing: border-box;
+}
+
+/* Slow down when face detected */
+.scroll-banner.face-detected .scroll-content {
+    animation-duration: 90s;
+}
+
+.scroll-content .scroll-message {
+    display: block;
+    padding: clamp(8px, 1.5vh, 20px) 0;
+    font-weight: 600;
+    text-shadow: 
+        0 0 10px rgba(0, 212, 255, 1),
+        0 0 20px rgba(0, 212, 255, 0.5);
+    letter-spacing: 0.02em;
+}
+
+/* Highlight important messages - Gold */
+.scroll-content .scroll-message.highlight {
+    font-size: clamp(24px, 3.5vw, 48px);
+    color: var(--accent-gold);
+    text-shadow: 
+        0 0 15px rgba(255, 215, 0, 1),
+        0 0 30px rgba(255, 215, 0, 0.5);
+    font-weight: 700;
+    padding: clamp(12px, 2vh, 28px) 0;
+}
+
+/* CTA message - Green, larger */
+.scroll-content .scroll-message.cta {
+    font-size: clamp(28px, 4vw, 56px);
+    color: var(--accent-green);
+    text-shadow: 
+        0 0 20px rgba(0, 255, 136, 1),
+        0 0 40px rgba(0, 255, 136, 0.6);
+    font-weight: 700;
+    padding: clamp(16px, 2.5vh, 32px) 0;
+    margin: clamp(8px, 1vh, 16px) 0;
+}
+
+.scroll-content .scroll-separator {
+    display: block;
+    padding: clamp(10px, 1.5vh, 20px) 0;
+    font-size: clamp(14px, 2vw, 24px);
+    color: var(--accent-purple);
+    opacity: 0.6;
+    text-align: center;
+}
+
+/* Simple vertical scroll animation */
+@keyframes starWarsCrawl {
+    0% {
+        top: 100%;
+        opacity: 0;
+    }
+    3% {
+        opacity: 1;
+    }
+    92% {
+        opacity: 1;
+    }
+    100% {
+        top: -150%;
+        opacity: 0;
+    }
+}
+
+/* Face detected indicator - Small, bottom-right corner */
+.face-detected-indicator {
+    position: fixed;
+    bottom: 100px;
+    right: 20px;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(10px);
+    border: 2px solid var(--accent-green);
+    border-radius: var(--radius-lg);
+    padding: 0.8rem 1.2rem;
+    text-align: center;
+    z-index: 15;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.4s ease;
+    box-shadow: 0 0 25px rgba(0, 255, 136, 0.4);
+    max-width: 200px;
+}
+
+.face-detected-indicator.visible {
+    opacity: 1;
+    visibility: visible;
+    animation: pulseGlow 2s ease-in-out infinite;
+}
+
+@keyframes pulseGlow {
+    0%, 100% { 
+        box-shadow: 0 0 15px rgba(0, 255, 136, 0.3);
+    }
+    50% { 
+        box-shadow: 0 0 35px rgba(0, 255, 136, 0.6);
+    }
+}
+
+.face-detected-indicator .face-icon {
+    font-size: 2rem;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+.face-detected-indicator .face-text {
+    font-size: 1.2rem;
+    color: var(--accent-green);
+    font-weight: 600;
+    display: inline-block;
+    vertical-align: middle;
+    margin: 0 0.3rem;
+}
+
+.face-detected-indicator .face-hint {
+    display: block;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-top: 0.3rem;
+}
+
+.face-detected-indicator .hand-icon {
+    font-size: 1.8rem;
+    display: inline-block;
+    vertical-align: middle;
+    animation: waveHand 0.6s ease-in-out infinite;
+}
+
+@keyframes waveHand {
+    0%, 100% { transform: rotate(-10deg); }
+    50% { transform: rotate(20deg); }
+}
+
+/* Hide scroll banner in light mode */
+body.light-mode .scroll-banner {
+    opacity: 0 !important;
+    visibility: hidden !important;
+}
+
+body.light-mode .face-detected-indicator {
+    opacity: 0 !important;
+    visibility: hidden !important;
+}
+
 /* === App Container === */
 .app-container {
     position: relative;
@@ -1012,6 +1251,48 @@ body {
 
 .face-item.welcome-back {
     animation: welcomeBack 0.8s ease-out;
+}
+
+/* === Captured Photo Preview === */
+.captured-photo {
+    display: none;
+    text-align: center;
+    margin-bottom: var(--space-md);
+    animation: photoReveal 0.6s ease-out;
+}
+
+.captured-photo.visible {
+    display: block;
+}
+
+@keyframes photoReveal {
+    0% {
+        opacity: 0;
+        transform: scale(0.8) rotateY(-10deg);
+    }
+    50% {
+        transform: scale(1.05) rotateY(5deg);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1) rotateY(0);
+    }
+}
+
+.captured-photo img {
+    max-width: 200px;
+    max-height: 150px;
+    border-radius: var(--radius-md);
+    border: 3px solid var(--accent-cyan);
+    box-shadow: 0 0 30px rgba(0, 212, 255, 0.4), var(--shadow-card);
+    object-fit: cover;
+}
+
+.captured-photo-label {
+    margin-top: var(--space-xs);
+    font-size: 0.85rem;
+    color: var(--accent-cyan);
+    font-weight: 500;
 }
 
 /* Capture Status Indicator */
