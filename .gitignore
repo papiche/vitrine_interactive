@@ -1,3 +1,6 @@
+# Environment (use .env.template as template)
+.env
+
 # Photos captured by vitrine - keep directory but ignore contents
 photos/*
 !photos/.gitkeep

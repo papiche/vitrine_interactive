@@ -17,9 +17,10 @@ const CONFIG = {
     POLL_INTERVAL: 50,  // ms - Gesture polling frequency
     EVENTS_REFRESH: 30000,  // ms - Nostr events refresh
     FACE_STATS_REFRESH: 60000,  // ms - Face stats refresh
-    QR_DISPLAY_TIME: 10,  // seconds
+    QR_DISPLAY_TIME: 10,  // seconds (overridden from /api/config gesture params)
     THUMBS_UP_HOLD: 1.5,  // seconds
     OPEN_HAND_HOLD: 1.0,  // seconds - Hold to show detail
+    DARK_MODE_TIMEOUT: 30,  // seconds - from server
     ANIMATION_DURATION: 500,  // ms
     MAX_VISIBLE_CARDS: 5,  // Cards visible at once
 };
@@ -1122,21 +1123,31 @@ function formatTimeAgo(timestamp) {
     return date.toLocaleDateString();
 }
 
-// === Config & Scroll Banner ===
+// === Config & Slideshow ===
 async function loadConfig() {
     try {
         const response = await fetch(`${CONFIG.API_BASE}/api/config`);
         state.config = await response.json();
-        
-        // Get messages based on browser language
-        const lang = navigator.language.substring(0, 2);
-        const messages = state.config.scroll_messages;
-        state.scrollMessages = messages[lang] || messages['fr'] || messages['default'] || [];
-        
-        // Initialize scroll banner
-        initScrollBanner();
-        
-        console.log(`[Config] Loaded ${state.scrollMessages.length} scroll messages`);
+        // Override gesture params from server (.env)
+        if (state.config.gesture) {
+            const g = state.config.gesture;
+            if (g.qr_display_time != null) CONFIG.QR_DISPLAY_TIME = g.qr_display_time;
+            if (g.thumbs_up_hold_time != null) CONFIG.THUMBS_UP_HOLD = g.thumbs_up_hold_time;
+            if (g.open_hand_hold_time != null) CONFIG.OPEN_HAND_HOLD = g.open_hand_hold_time;
+            if (g.dark_mode_timeout != null) CONFIG.DARK_MODE_TIMEOUT = g.dark_mode_timeout;
+        }
+        // Check if we have slides (v2.0 config)
+        if (state.config.slides && state.config.slides.length > 0) {
+            console.log(`[Config] Loaded ${state.config.slides.length} slides`);
+            initSlideshow(state.config.slides);
+        } else {
+            // Fallback to scroll messages
+            const lang = navigator.language.substring(0, 2);
+            const messages = state.config.scroll_messages;
+            state.scrollMessages = messages[lang] || messages['fr'] || messages['default'] || [];
+            initScrollBanner();
+            console.log(`[Config] Loaded ${state.scrollMessages.length} scroll messages`);
+        }
     } catch (error) {
         console.log('[Config] Using default config:', error.message);
         state.scrollMessages = [
@@ -1145,6 +1156,251 @@ async function loadConfig() {
             "👍 Pouce levé = Photo + Face ID"
         ];
         initScrollBanner();
+    }
+}
+
+// === Slideshow System ===
+let slideshowState = {
+    slides: [],
+    currentSlide: 0,
+    slideInterval: null,
+    progressInterval: null,
+    slideStartTime: 0,
+    isPaused: false
+};
+
+function initSlideshow(slides) {
+    const container = document.getElementById('slideshow-container');
+    const dotsContainer = document.getElementById('slide-dots');
+    const progressBar = document.getElementById('slide-progress');
+    
+    if (!container) return;
+    
+    slideshowState.slides = slides;
+    slideshowState.currentSlide = 0;
+    
+    // Hide scroll banner, use slideshow instead
+    const scrollBanner = document.getElementById('scroll-banner');
+    if (scrollBanner) scrollBanner.style.display = 'none';
+    
+    // Generate slides HTML
+    let slidesHtml = '';
+    let dotsHtml = '';
+    
+    slides.forEach((slide, idx) => {
+        slidesHtml += renderSlide(slide, idx);
+        dotsHtml += `<div class="slide-dot ${idx === 0 ? 'active' : ''}" data-slide="${idx}"></div>`;
+    });
+    
+    container.innerHTML = slidesHtml;
+    if (dotsContainer) dotsContainer.innerHTML = dotsHtml;
+    
+    // Add click handlers to dots
+    document.querySelectorAll('.slide-dot').forEach(dot => {
+        dot.addEventListener('click', () => {
+            const slideIdx = parseInt(dot.dataset.slide);
+            goToSlide(slideIdx);
+        });
+    });
+    
+    // Make slideshow visible immediately (dark mode default)
+    container.classList.add('visible');
+    if (progressBar) progressBar.style.display = 'block';
+    if (dotsContainer) dotsContainer.style.display = 'flex';
+    
+    // Start slideshow
+    showSlide(0);
+    
+    console.log('[Slideshow] Initialized with', slides.length, 'slides');
+}
+
+function renderSlide(slide, index) {
+    const isActive = index === 0 ? 'active' : '';
+    const highlight = slide.highlight ? 'highlight' : '';
+    
+    switch (slide.type) {
+        case 'title':
+            return `
+                <div class="slide slide--title ${isActive}" data-slide-idx="${index}" data-duration="${slide.duration || 8}">
+                    <div class="slide-title">${escapeHtml(slide.title)}</div>
+                    ${slide.subtitle ? `<div class="slide-subtitle">${escapeHtml(slide.subtitle)}</div>` : ''}
+                </div>
+            `;
+        
+        case 'text':
+            return `
+                <div class="slide slide--text ${isActive}" data-slide-idx="${index}" data-duration="${slide.duration || 10}">
+                    ${slide.icon ? `<div class="slide-icon">${slide.icon}</div>` : ''}
+                    <div class="slide-title">${escapeHtml(slide.title)}</div>
+                    <div class="slide-content">${escapeHtml(slide.content)}</div>
+                </div>
+            `;
+        
+        case 'image':
+            return `
+                <div class="slide slide--image ${isActive}" data-slide-idx="${index}" data-duration="${slide.duration || 10}">
+                    <div class="slide-title">${escapeHtml(slide.title)}</div>
+                    <img class="slide-media" src="${slide.media_url}" alt="${escapeHtml(slide.media_alt || slide.title)}" />
+                    ${slide.content ? `<div class="slide-caption">${escapeHtml(slide.content)}</div>` : ''}
+                </div>
+            `;
+        
+        case 'video':
+            return `
+                <div class="slide slide--video ${isActive}" data-slide-idx="${index}" data-duration="${slide.duration || 30}">
+                    <div class="slide-title">${escapeHtml(slide.title)}</div>
+                    <video class="slide-media" 
+                           src="${slide.media_url}" 
+                           ${slide.media_poster ? `poster="${slide.media_poster}"` : ''}
+                           ${slide.autoplay ? 'autoplay' : ''} 
+                           ${slide.loop ? 'loop' : ''} 
+                           muted playsinline></video>
+                </div>
+            `;
+        
+        case 'offer':
+            const benefits = (slide.benefits || []).map(b => `<li>${escapeHtml(b)}</li>`).join('');
+            return `
+                <div class="slide slide--offer ${isActive} ${highlight}" data-slide-idx="${index}" data-duration="${slide.duration || 12}">
+                    <div class="slide-title">${escapeHtml(slide.title)}</div>
+                    <div class="slide-price">${escapeHtml(slide.price)}</div>
+                    <ul class="slide-benefits">${benefits}</ul>
+                    ${slide.cta ? `<div class="slide-cta">${escapeHtml(slide.cta)}</div>` : ''}
+                    ${slide.qr_content ? `<img class="slide-qr" src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(slide.qr_content)}" alt="QR Code" />` : ''}
+                </div>
+            `;
+        
+        case 'cta':
+            return `
+                <div class="slide slide--cta ${isActive}" data-slide-idx="${index}" data-duration="${slide.duration || 8}">
+                    <div class="slide-title">${escapeHtml(slide.title)}</div>
+                    ${slide.content ? `<div class="slide-content">${escapeHtml(slide.content)}</div>` : ''}
+                </div>
+            `;
+        
+        default:
+            return `
+                <div class="slide slide--text ${isActive}" data-slide-idx="${index}" data-duration="${slide.duration || 10}">
+                    <div class="slide-title">${escapeHtml(slide.title || 'Slide')}</div>
+                </div>
+            `;
+    }
+}
+
+function showSlide(index) {
+    const slides = document.querySelectorAll('.slide');
+    const dots = document.querySelectorAll('.slide-dot');
+    
+    if (slides.length === 0) return;
+    
+    // Wrap around
+    if (index >= slides.length) index = 0;
+    if (index < 0) index = slides.length - 1;
+    
+    slideshowState.currentSlide = index;
+    
+    // Update active slide
+    slides.forEach((slide, i) => {
+        slide.classList.toggle('active', i === index);
+        
+        // Handle video playback
+        const video = slide.querySelector('video');
+        if (video) {
+            if (i === index) {
+                video.currentTime = 0;
+                video.play().catch(() => {});
+            } else {
+                video.pause();
+            }
+        }
+    });
+    
+    // Update dots
+    dots.forEach((dot, i) => {
+        dot.classList.toggle('active', i === index);
+    });
+    
+    // Get current slide duration
+    const currentSlideEl = slides[index];
+    const duration = parseInt(currentSlideEl.dataset.duration) || 10;
+    
+    // Start progress and auto-advance
+    startSlideProgress(duration);
+    
+    console.log(`[Slideshow] Showing slide ${index + 1}/${slides.length} (${duration}s)`);
+}
+
+function startSlideProgress(duration) {
+    const progressBar = document.getElementById('slide-progress-bar');
+    
+    // Clear existing intervals
+    if (slideshowState.slideInterval) clearTimeout(slideshowState.slideInterval);
+    if (slideshowState.progressInterval) clearInterval(slideshowState.progressInterval);
+    
+    slideshowState.slideStartTime = Date.now();
+    const durationMs = duration * 1000;
+    
+    // Update progress bar
+    if (progressBar) {
+        slideshowState.progressInterval = setInterval(() => {
+            if (slideshowState.isPaused) return;
+            
+            const elapsed = Date.now() - slideshowState.slideStartTime;
+            const progress = Math.min((elapsed / durationMs) * 100, 100);
+            progressBar.style.width = `${progress}%`;
+        }, 50);
+    }
+    
+    // Auto-advance to next slide
+    if (state.config?.settings?.auto_advance !== false) {
+        slideshowState.slideInterval = setTimeout(() => {
+            if (!slideshowState.isPaused) {
+                nextSlide();
+            }
+        }, durationMs);
+    }
+}
+
+function nextSlide() {
+    showSlide(slideshowState.currentSlide + 1);
+}
+
+function prevSlide() {
+    showSlide(slideshowState.currentSlide - 1);
+}
+
+function goToSlide(index) {
+    showSlide(index);
+}
+
+function pauseSlideshow() {
+    slideshowState.isPaused = true;
+    if (slideshowState.slideInterval) clearTimeout(slideshowState.slideInterval);
+}
+
+function resumeSlideshow() {
+    slideshowState.isPaused = false;
+    // Resume with remaining time
+    const currentSlideEl = document.querySelector('.slide.active');
+    if (currentSlideEl) {
+        const duration = parseInt(currentSlideEl.dataset.duration) || 10;
+        startSlideProgress(duration);
+    }
+}
+
+function updateSlideshowVisibility(show) {
+    const container = document.getElementById('slideshow-container');
+    const progress = document.getElementById('slide-progress');
+    const dots = document.getElementById('slide-dots');
+    
+    if (container) container.classList.toggle('visible', show);
+    if (progress) progress.style.display = show ? 'block' : 'none';
+    if (dots) dots.style.display = show ? 'flex' : 'none';
+    
+    if (show) {
+        resumeSlideshow();
+    } else {
+        pauseSlideshow();
     }
 }
 
@@ -1192,13 +1448,17 @@ function initScrollBanner() {
 }
 
 function updateScrollBanner(show) {
+    const shouldShow = show && !state.showDetail && !state.showQR;
+    
+    // Update scroll banner (if using scroll mode)
     const banner = document.getElementById('scroll-banner');
-    if (banner) {
-        if (show && !state.showDetail && !state.showQR) {
-            banner.classList.add('visible');
-        } else {
-            banner.classList.remove('visible');
-        }
+    if (banner && banner.style.display !== 'none') {
+        banner.classList.toggle('visible', shouldShow);
+    }
+    
+    // Update slideshow (if using slideshow mode)
+    if (slideshowState.slides.length > 0) {
+        updateSlideshowVisibility(shouldShow);
     }
 }
 
@@ -1209,31 +1469,33 @@ function updateFaceDetection(faceDetected, faceCount, handDetected) {
     
     const banner = document.getElementById('scroll-banner');
     const indicator = document.getElementById('face-detected-indicator');
+    const slideshowContainer = document.getElementById('slideshow-container');
     
     // Only show face effects in dark mode (no hand detected)
     const showFaceEffects = faceDetected && !handDetected && !state.lightMode && !state.showDetail && !state.showQR;
     
     // Slow down scroll when face detected
     if (banner) {
-        if (showFaceEffects) {
-            banner.classList.add('face-detected');
-        } else {
-            banner.classList.remove('face-detected');
+        banner.classList.toggle('face-detected', showFaceEffects);
+    }
+    
+    // Pause slideshow when face detected (give time to read)
+    if (slideshowContainer && slideshowState.slides.length > 0) {
+        if (showFaceEffects && !slideshowState.isPaused) {
+            pauseSlideshow();
+        } else if (!showFaceEffects && slideshowState.isPaused) {
+            resumeSlideshow();
         }
     }
     
     // Show/hide face indicator
     if (indicator) {
-        if (showFaceEffects) {
-            indicator.classList.add('visible');
-        } else {
-            indicator.classList.remove('visible');
-        }
+        indicator.classList.toggle('visible', showFaceEffects);
     }
     
     // Log face detection changes
     if (faceDetected !== prevFaceDetected) {
-        console.log(`[Face] ${faceDetected ? `Detected ${faceCount} face(s) - slowing scroll` : 'No face - normal speed'}`);
+        console.log(`[Face] ${faceDetected ? `Detected ${faceCount} face(s) - pausing slideshow` : 'No face - resuming'}`);
     }
 }
 

@@ -238,34 +238,40 @@ vitrine_interactive/
 
 ## ⚙️ Configuration
 
-### Variables d'environnement (optionnelles)
+### Variables d'environnement
+
+1. Copier `.env.template` vers `.env` et configurer :
 
 ```bash
-export VITRINE_PORT=5555      # Port du serveur
-export VITRINE_CAMERA=0       # Index de la caméra
+cp .env.template .env
+# Éditer .env avec vos paramètres
 ```
 
-### Paramètres dans `vitrine.py`
+Ou utiliser le script de gestion :
 
-```python
-# Zones de détection (0-1)
-ZONE_LEFT = 0.25      # Zone gauche (< 25%)
-ZONE_RIGHT = 0.75     # Zone droite (> 75%)
-
-# Durées
-SWIPE_COOLDOWN = 0.5       # Délai entre swipes (secondes)
-THUMBS_UP_HOLD_TIME = 1.5  # Durée pour capture photo
-OPEN_HAND_HOLD_TIME = 1.0  # Durée pour ouvrir détails
-QR_DISPLAY_TIME = 10       # Durée affichage QR
-DARK_MODE_TIMEOUT = 60     # Retour mode sombre
+```bash
+./manage_env.sh init              # Créer .env depuis .env.template
+./manage_env.sh show              # Afficher les variables
+./manage_env.sh set VITRINE_QR_DISPLAY_TIME 15
+./manage_env.sh get VITRINE_QR_DISPLAY_TIME
+./manage_env.sh validate          # Vérifier les types
+./manage_env.sh help              # Aide
 ```
 
-### Paramètres dans `face_recognition_module.py`
+Variables principales (défauts dans `.env.template`) :
 
-```python
-FACE_MATCH_THRESHOLD = 0.6  # Seuil de correspondance (0.6 = défaut)
-MIN_FACE_SIZE = 50          # Taille minimum d'un visage en pixels
-```
+| Variable | Description | Défaut |
+|----------|-------------|--------|
+| `VITRINE_ZONE_LEFT` / `VITRINE_ZONE_RIGHT` | Zones de swipe (0-1) | 0.25 / 0.75 |
+| `VITRINE_SWIPE_COOLDOWN` | Délai entre swipes (s) | 0.5 |
+| `VITRINE_THUMBS_UP_HOLD_TIME` | Durée pouce levé → capture (s) | 3.0 |
+| `VITRINE_OPEN_HAND_HOLD_TIME` | Durée main ouverte → détails (s) | 2.0 |
+| `VITRINE_QR_DISPLAY_TIME` | Affichage QR après capture (s) | 10 |
+| `VITRINE_DARK_MODE_TIMEOUT` | Retour mode sombre sans main (s) | 30 |
+| `VITRINE_FACE_MATCH_THRESHOLD` | Seuil reconnaissance (0.6 = défaut) | 0.6 |
+| `VITRINE_MIN_FACE_SIZE` | Taille min visage (pixels) | 50 |
+
+Variables optionnelles (port, caméra) : `VITRINE_PORT`, `VITRINE_CAMERA` (si utilisées par le script de démarrage).
 
 ## 🛠️ Gestion des Visages (CLI)
 

@@ -27,6 +27,14 @@ from typing import List, Dict, Tuple, Optional
 import numpy as np
 import cv2
 
+# Load .env from vitrine_interactive directory
+try:
+    from dotenv import load_dotenv
+    _env_path = Path(__file__).resolve().parent / ".env"
+    load_dotenv(_env_path)
+except ImportError:
+    pass
+
 # Try to import face_recognition (preferred for recognition)
 try:
     import face_recognition
@@ -55,9 +63,16 @@ EMBEDDINGS_FILE = FACES_DIR / "embeddings.json"
 UNKNOWN_DIR = FACES_DIR / "unknown"
 USERS_DIR = FACES_DIR / "users"
 
-# Recognition thresholds
-FACE_MATCH_THRESHOLD = 0.6  # Lower = stricter matching (0.6 is good default)
-MIN_FACE_SIZE = 50  # Minimum face size in pixels
+# Recognition thresholds (from .env)
+def _env_float(key: str, default: float) -> float:
+    v = os.getenv(key)
+    return float(v) if v is not None else default
+def _env_int(key: str, default: int) -> int:
+    v = os.getenv(key)
+    return int(v) if v is not None else default
+
+FACE_MATCH_THRESHOLD = _env_float("VITRINE_FACE_MATCH_THRESHOLD", 0.6)
+MIN_FACE_SIZE = _env_int("VITRINE_MIN_FACE_SIZE", 50)
 
 # Ensure directories exist
 FACES_DIR.mkdir(exist_ok=True)

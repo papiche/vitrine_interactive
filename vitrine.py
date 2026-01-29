@@ -33,6 +33,14 @@ from pathlib import Path
 from io import BytesIO
 from collections import deque
 
+# Load .env from vitrine_interactive directory
+try:
+    from dotenv import load_dotenv
+    _env_path = Path(__file__).resolve().parent / ".env"
+    load_dotenv(_env_path)
+except ImportError:
+    pass  # python-dotenv optional
+
 # Flask for web server
 from flask import Flask, Response, render_template, jsonify, request, send_from_directory
 from flask_cors import CORS
@@ -91,17 +99,23 @@ DEFAULT_PORT = 5555
 FRAME_WIDTH = 640
 FRAME_HEIGHT = 480
 
-# Gesture detection zones (normalized 0-1)
-ZONE_LEFT = 0.25    # Left 25% -> Previous
-ZONE_RIGHT = 0.75   # Right 25% -> Next
-ZONE_CENTER = (0.35, 0.65)  # Center 30% -> Detail view
+# Gesture detection zones and thresholds (from .env, defaults below)
+def _env_float(key: str, default: float) -> float:
+    v = os.getenv(key)
+    return float(v) if v is not None else default
+def _env_int(key: str, default: int) -> int:
+    v = os.getenv(key)
+    return int(v) if v is not None else default
 
-# Gesture thresholds
-SWIPE_COOLDOWN = 0.5  # Seconds between swipes
-THUMBS_UP_HOLD_TIME = 3.0  # Seconds to hold thumbs up (doubled to avoid false triggers)
-OPEN_HAND_HOLD_TIME = 2.0  # Seconds to hold open hand for detail view (doubled)
-QR_DISPLAY_TIME = 10  # Seconds to display QR code
-DARK_MODE_TIMEOUT = 30  # Seconds without hand to switch back to dark mode
+ZONE_LEFT = _env_float("VITRINE_ZONE_LEFT", 0.25)
+ZONE_RIGHT = _env_float("VITRINE_ZONE_RIGHT", 0.75)
+ZONE_CENTER = (_env_float("VITRINE_ZONE_CENTER_LEFT", 0.35), _env_float("VITRINE_ZONE_CENTER_RIGHT", 0.65))
+
+SWIPE_COOLDOWN = _env_float("VITRINE_SWIPE_COOLDOWN", 0.5)
+THUMBS_UP_HOLD_TIME = _env_float("VITRINE_THUMBS_UP_HOLD_TIME", 3.0)
+OPEN_HAND_HOLD_TIME = _env_float("VITRINE_OPEN_HAND_HOLD_TIME", 2.0)
+QR_DISPLAY_TIME = _env_int("VITRINE_QR_DISPLAY_TIME", 10)
+DARK_MODE_TIMEOUT = _env_float("VITRINE_DARK_MODE_TIMEOUT", 30)
 
 # --- FLASK APP ---
 app = Flask(__name__, 
@@ -151,7 +165,7 @@ class GestureState:
         self.lock = threading.Lock()
 
 # Cooldown after closing detail before thumbs up can trigger (seconds)
-THUMBS_UP_COOLDOWN_AFTER_DETAIL = 2.0
+THUMBS_UP_COOLDOWN_AFTER_DETAIL = 3.0
 
 # Movement threshold to switch from "open hand hold" to "swipe" (normalized 0-1)
 HAND_MOVEMENT_THRESHOLD = 0.08  # 8% of screen width - more sensitive to movement
@@ -1167,29 +1181,38 @@ def api_qr():
 
 @app.route('/api/config')
 def api_config():
-    """Get vitrine configuration (scroll messages, etc.)"""
+    """Get vitrine configuration (scroll messages, gesture params from .env, etc.)"""
     config_path = Path(__file__).parent / "vitrine_config.json"
-    
+    config = {}
     if config_path.exists():
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
                 config = json.load(f)
-            return jsonify(config)
         except Exception as e:
             print(f"[CONFIG] Error loading config: {e}")
-    
-    # Default config if file not found
-    return jsonify({
-        'scroll_messages': {
-            'default': [
-                "🌍 UPlanet - L'Internet Libre et Coopératif",
-                "👋 Levez la main pour interagir",
-                "👍 Pouce levé = Photo + Face ID"
-            ]
-        },
-        'scroll_speed': 80,
-        'scroll_color': '#00d4ff'
-    })
+    if not config:
+        config = {
+            'scroll_messages': {
+                'default': [
+                    "🌍 UPlanet - L'Internet Libre et Coopératif",
+                    "👋 Levez la main pour interagir",
+                    "👍 Pouce levé = Photo + Face ID"
+                ]
+            },
+            'scroll_speed': 80,
+            'scroll_color': '#00d4ff'
+        }
+    # Expose gesture params from .env for frontend
+    config['gesture'] = {
+        'zone_left': ZONE_LEFT,
+        'zone_right': ZONE_RIGHT,
+        'swipe_cooldown': SWIPE_COOLDOWN,
+        'thumbs_up_hold_time': THUMBS_UP_HOLD_TIME,
+        'open_hand_hold_time': OPEN_HAND_HOLD_TIME,
+        'qr_display_time': QR_DISPLAY_TIME,
+        'dark_mode_timeout': DARK_MODE_TIMEOUT,
+    }
+    return jsonify(config)
 
 # --- FACE RECOGNITION API ---
 

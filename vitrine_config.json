@@ -1,41 +1,156 @@
 {
+  "version": "2.0",
+  "language": "fr",
+  
+  "slides": [
+    {
+      "id": "intro",
+      "type": "title",
+      "title": "🌍 UPlanet",
+      "subtitle": "Reprenez le contrôle d'Internet",
+      "duration": 6
+    },
+    {
+      "id": "headline",
+      "type": "text",
+      "title": "Brique par brique",
+      "content": "Devenez propriétaire de vos données. Pas de GAFAM. Pas de surveillance.",
+      "icon": "🧱",
+      "duration": 8
+    },
+    {
+      "id": "multipass",
+      "type": "text",
+      "title": "🎫 MULTIPASS",
+      "content": "Une seule carte papier pour tout Internet. Plus aucun mot de passe à retenir.",
+      "icon": "🔑",
+      "duration": 8
+    },
+    {
+      "id": "cloud",
+      "type": "text",
+      "title": "🔒 128 Go Privés",
+      "content": "Votre cloud que Google ne peut pas fouiller. Fichiers, contacts, calendriers.",
+      "icon": "☁️",
+      "duration": 8
+    },
+    {
+      "id": "ia",
+      "type": "text",
+      "title": "🤖 IA #BRO",
+      "content": "L'IA travaille pour vous, pas contre vous. Traitée localement, jamais pour vous profiler.",
+      "icon": "🧠",
+      "duration": 8
+    },
+    {
+      "id": "n2",
+      "type": "text",
+      "title": "📱 Protocole N²",
+      "content": "Votre mur, pas celui de Facebook. Zéro algorithme, ordre chronologique, 100% de vos posts visibles.",
+      "icon": "💬",
+      "duration": 10
+    },
+    {
+      "id": "tier-explore",
+      "type": "offer",
+      "title": "🔍 EXPLORATEUR",
+      "price": "Gratuit",
+      "benefits": [
+        "MULTIPASS immédiat",
+        "Payez ce que vous utilisez",
+        "Testez sans engagement"
+      ],
+      "cta": "Scannez pour commencer",
+      "qr_content": "https://ipfs.copylaradio.com/ipns/copylaradio.com/entrance.html",
+      "duration": 10
+    },
+    {
+      "id": "tier-batisseur",
+      "type": "offer",
+      "title": "🏗️ BÂTISSEUR",
+      "price": "50€",
+      "benefits": [
+        "1 part sociale SCIC",
+        "Plus de loyer",
+        "Droit de vote 1 personne = 1 voix"
+      ],
+      "cta": "Devenez co-propriétaire",
+      "qr_content": "https://ipfs.copylaradio.com/ipns/copylaradio.com/entrance.html#batisseur",
+      "highlight": true,
+      "duration": 12
+    },
+    {
+      "id": "zen",
+      "type": "text",
+      "title": "✨ Le Ẑen (Ẑ)",
+      "content": "Chaque like = 1Ẑ. Votre contenu de qualité est récompensé automatiquement.",
+      "icon": "💎",
+      "duration": 8
+    },
+    {
+      "id": "transparence",
+      "type": "text",
+      "title": "📊 100% Transparent",
+      "content": "Comptabilité publique sur blockchain. Règle des tiers : 1/3 Trésorerie, 1/3 R&D, 1/3 Biens Communs.",
+      "icon": "🔍",
+      "duration": 10
+    },
+    {
+      "id": "difference",
+      "type": "text",
+      "title": "⚡ La Différence",
+      "content": "GAFAM = vous êtes le produit. UPlanet = vous êtes le propriétaire.",
+      "icon": "🆚",
+      "duration": 8
+    },
+    {
+      "id": "cta",
+      "type": "cta",
+      "title": "👋 Interagissez !",
+      "content": "Levez la main • Pouce levé = Photo",
+      "duration": 6
+    }
+  ],
+  
   "scroll_messages": {
     "fr": [
-      "🌍 Devenez Bâtisseur de l'Internet Libre",
-      "💚 ICO ẐEN / CopyLaRadio : Construisez et possédez l'infrastructure d'un web décentralisé",
-      "🔒 Vos données, vos règles. Pas de surveillance GAFAM ici.",
-      "🚀 Propulsé par IPFS, Nostr et l'économie coopérative",
-      "💰 PALIER SOUTIEN 50€ : MULTIPASS 1 an + 1 part sociale SCIC",
-      "🏗️ PALIER BÂTISSEUR 250€ : Part infrastructure ♥BOX + Revenus passifs en Ẑen",
-      "👥 PALIER COOPÉRATEUR 1000€ : Siège au conseil de gouvernance",
-      "🤝 SCIC CopyLaRadio : Le pouvoir reste entre vos mains",
-      "✨ Le Ẑen (Ẑ) : Unité de compte stable adossée à l'économie réelle",
-      "👋 Levez la main pour interagir avec la vitrine",
-      "👍 Pouce levé = Photo + Reconnaissance Faciale"
+      "🌍 Reprenez le contrôle d'Internet, brique par brique",
+      "🎫 MULTIPASS : Une carte papier = tout Internet",
+      "🔒 128 Go que Google ne peut pas fouiller",
+      "🤖 IA #BRO : Elle travaille POUR vous",
+      "📱 Protocole N² : Zéro algorithme, 100% chronologique",
+      "💰 Co-propriétaire dès 50€ avec droit de vote",
+      "✨ Chaque like = 1 Ẑen dans votre portefeuille",
+      "📊 Comptabilité 100% transparente sur blockchain",
+      "👋 Levez la main pour interagir",
+      "👍 Pouce levé = Photo + Reconnaissance"
     ],
     "en": [
-      "🌍 Become a Builder of the Free Internet",
-      "💚 ẐEN / CopyLaRadio ICO: Build and own decentralized web infrastructure",
-      "🔒 Your data, your rules. No GAFAM surveillance here.",
-      "🚀 Powered by IPFS, Nostr and cooperative economics",
-      "💰 SUPPORTER TIER €50: 1 year MULTIPASS + 1 SCIC share",
-      "🏗️ BUILDER TIER €250: ♥BOX infrastructure share + Passive income in Ẑen",
-      "👥 COOPERATOR TIER €1000: Seat on governance council",
-      "🤝 SCIC CopyLaRadio: Power stays in your hands",
-      "✨ Ẑen (Ẑ): Stable unit backed by real economy",
+      "🌍 Take back control of Internet, brick by brick",
+      "🎫 MULTIPASS: One paper card = all Internet",
+      "🔒 128 GB that Google can't search",
+      "🤖 AI #BRO: It works FOR you",
+      "📱 N² Protocol: Zero algorithm, 100% chronological",
+      "💰 Co-owner from €50 with voting rights",
+      "✨ Each like = 1 Ẑen in your wallet",
+      "📊 100% transparent blockchain accounting",
       "👋 Raise your hand to interact",
-      "👍 Thumbs up = Photo + Face Recognition"
-    ],
-    "default": [
-      "🌍 UPlanet - L'Internet Libre et Coopératif",
-      "👋 Levez la main pour interagir",
-      "👍 Pouce levé = Photo + Face ID",
-      "💚 Rejoignez l'aventure sur copylaradio.com"
+      "👍 Thumbs up = Photo + Recognition"
     ]
   },
-  "scroll_speed": 80,
-  "scroll_color": "#00d4ff",
-  "ico_url": "https://copylaradio.com/ico",
-  "logo_url": "http://127.0.0.1:8080/ipfs/QmfBK5h8R4LjS2qMtHKze3nnFrtdm85pCbUw3oPSirik5M/logo.uplanet.png"
+  
+  "settings": {
+    "scroll_speed": 80,
+    "auto_advance": true,
+    "show_progress": true,
+    "transition": "fade"
+  },
+  
+  "branding": {
+    "logo_url": "/static/logo.png",
+    "ico_url": "https://ipfs.copylaradio.com/ipns/copylaradio.com/entrance.html",
+    "primary_color": "#00ff88",
+    "secondary_color": "#00d4ff",
+    "accent_color": "#ffd700"
+  }
 }
-
