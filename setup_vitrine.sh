@@ -4,11 +4,14 @@
 # Checks dependencies and configuration
 ################################################################################
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
 echo "=== UPlanet Interactive Showcase Setup ==="
 echo ""
 
 # Check Python dependencies
-echo "[1/4] Checking Python dependencies..."
+echo "[1/5] Checking Python dependencies..."
 python3 -c "import cv2" 2>/dev/null || {
     echo "  ❌ OpenCV not installed. Install with: pip install opencv-python"
     exit 1
@@ -24,7 +27,7 @@ python3 -c "import numpy" 2>/dev/null || {
 echo "  ✅ Python dependencies OK"
 
 # Check GPS file
-echo "[2/4] Checking GPS configuration..."
+echo "[2/5] Checking GPS configuration..."
 GPS_FILE="$HOME/.zen/GPS"
 if [ -f "$GPS_FILE" ]; then
     source "$GPS_FILE"
@@ -44,7 +47,7 @@ else
 fi
 
 # Check nostr_get_events.sh
-echo "[3/4] Checking NOSTR tools..."
+echo "[3/5] Checking NOSTR tools..."
 NOSTR_SCRIPT="$HOME/.zen/Astroport.ONE/tools/nostr_get_events.sh"
 if [ -f "$NOSTR_SCRIPT" ]; then
     echo "  ✅ nostr_get_events.sh found"
@@ -59,27 +62,49 @@ else
     echo "  The showcase will work but won't fetch NOSTR events"
 fi
 
-# Check intro video
-echo "[4/4] Checking intro video..."
-VIDEO_FILE="./UPlanet___Un_Meilleur_Internet.mp4"
+# Check intro video (optional)
+echo "[4/5] Checking intro video..."
+VIDEO_FILE="$SCRIPT_DIR/Intro.mp4"
 if [ -f "$VIDEO_FILE" ]; then
     echo "  ✅ Intro video found: $VIDEO_FILE"
 else
-    echo "  ⚠️  Intro video not found: $VIDEO_FILE"
-    echo "  Please provide an intro video file"
+    echo "  ⚠️  Intro video not found: $VIDEO_FILE (optional)"
+fi
+
+# Check .env and offer manage_env.sh
+echo "[5/5] Checking .env..."
+ENV_FILE="$SCRIPT_DIR/.env"
+MANAGE_ENV="$SCRIPT_DIR/manage_env.sh"
+if [ -f "$ENV_FILE" ]; then
+    echo "  ✅ .env found"
+else
+    echo "  ⚠️  .env not found (gesture/face params will use defaults)"
+    echo "  Create from template: ./manage_env.sh init"
+    if [ -x "$MANAGE_ENV" ]; then
+        echo ""
+        read -r -p "  Run ./manage_env.sh init now? [y/N] " reply
+        case "${reply:-n}" in
+            [yY][eE][sS]|[yY])
+                "$MANAGE_ENV" init
+                echo "  Edit .env if needed: ./manage_env.sh show"
+                ;;
+            *) echo "  Run later: ./manage_env.sh init" ;;
+        esac
+    fi
+fi
+if [ -x "$MANAGE_ENV" ]; then
+    echo "  Manage config: ./manage_env.sh (init|show|set|get|validate|help)"
 fi
 
 echo ""
 echo "=== Setup Complete ==="
 echo ""
 echo "To run the showcase:"
-echo "  cd $(pwd)"
-echo "  python3 vitrine_interactive.py"
+echo "  cd $SCRIPT_DIR"
+echo "  ./start_vitrine.sh"
 echo ""
-echo "Controls:"
-echo "  - 'q': Quit"
-echo "  - 'r': Reset to intro"
-echo "  - Wave your hand: Trigger NOSTR events display"
+echo "To manage .env (zones, durations, face recognition):"
+echo "  ./manage_env.sh help"
 echo ""
 
 
