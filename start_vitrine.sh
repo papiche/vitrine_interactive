@@ -84,6 +84,10 @@ for pkg in "${REQUIRED_PACKAGES[@]}"; do
             "Pillow")
                 python3 -c "import PIL" 2>/dev/null || pip install Pillow --quiet
                 ;;
+			"mediapipe")
+                # Forcer une version < 0.10.30 car l'API solutions a été retirée
+                pip install "mediapipe<0.10.30" --quiet
+                ;;
             *)
                 pip install "$pkg" --quiet
                 ;;
@@ -91,6 +95,12 @@ for pkg in "${REQUIRED_PACKAGES[@]}"; do
         echo -e "${YELLOW}[INFO] Installed: $pkg${NC}"
     fi
 done
+
+# NOUVEAU : Forcer le downgrade si la version installée est trop récente et ne possède pas l'API "solutions"
+if ! python3 -c "import mediapipe.solutions" 2>/dev/null; then
+    echo -e "${YELLOW}[INFO] Downgrading mediapipe to a version < 0.10.30 (Solutions API required)...${NC}"
+    pip install "mediapipe<0.10.30" --quiet
+fi
 
 echo -e "${GREEN}[OK] All dependencies installed${NC}"
 
