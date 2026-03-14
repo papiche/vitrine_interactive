@@ -111,6 +111,7 @@ cd "$SCRIPT_DIR"
 PORT=5555
 CAMERA=0
 DEBUG=""
+PROFILE=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -126,13 +127,19 @@ while [[ $# -gt 0 ]]; do
             DEBUG="--debug"
             shift
             ;;
+        --profile)
+            PROFILE="$2"
+            shift 2
+            ;;
         --help|-h)
-            echo "Usage: $0 [--port PORT] [--camera INDEX] [--debug]"
+            echo "Usage: $0 [--port PORT] [--camera INDEX] [--debug] [--profile PROFILE]"
             echo ""
             echo "Options:"
-            echo "  --port, -p     Server port (default: 5555)"
-            echo "  --camera, -c   Camera index (default: 0)"
-            echo "  --debug, -d    Enable debug mode"
+            echo "  --port, -p       Server port (default: 5555)"
+            echo "  --camera, -c     Camera index (default: 0)"
+            echo "  --debug, -d      Enable debug mode"
+            echo "  --profile        Force hardware profile: minimal|low|medium|high"
+            echo "                   (auto-detected if omitted)"
             echo ""
             exit 0
             ;;
@@ -142,6 +149,12 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Set hardware profile override if specified
+if [[ -n "$PROFILE" ]]; then
+    export VITRINE_PROFILE="$PROFILE"
+    echo -e "${YELLOW}[INFO] Hardware profile override: $PROFILE${NC}"
+fi
 
 echo -e "${GREEN}[INFO] Starting server on port $PORT with camera $CAMERA${NC}"
 echo -e "${CYAN}[INFO] Open http://127.0.0.1:$PORT in your browser${NC}"

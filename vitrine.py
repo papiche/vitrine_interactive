@@ -68,16 +68,26 @@ except ImportError:
     HAS_QRCODE = False
     print("[WARN] qrcode not installed. pip install qrcode[pil]")
 
-# Face Recognition
-try:
-    from face_recognition_module import FaceRecognizer
-    face_recognizer = FaceRecognizer()
-    HAS_FACE_RECOGNITION = True
-    print("[FACE] Face recognition module loaded")
-except ImportError as e:
-    HAS_FACE_RECOGNITION = False
-    face_recognizer = None
-    print(f"[WARN] Face recognition not available: {e}")
+# Face Recognition (conditionally loaded based on hardware profile)
+HAS_FACE_RECOGNITION = False
+face_recognizer = None
+# HW not yet imported here — lazy check deferred to after profile load
+
+# --- HARDWARE PROFILE (auto-detect machine type & resources) ---
+from hardware_profile import HW
+print(f"[HW] {HW.summary()}")
+
+# Load face recognition only if hardware profile allows it
+if HW.face_recognition:
+    try:
+        from face_recognition_module import FaceRecognizer
+        face_recognizer = FaceRecognizer()
+        HAS_FACE_RECOGNITION = True
+        print("[FACE] Face recognition module loaded")
+    except ImportError as e:
+        print(f"[WARN] Face recognition not available: {e}")
+else:
+    print(f"[FACE] Face recognition disabled (profile: {HW.profile_name})")
 
 # --- CONFIGURATION ---
 HOME = os.path.expanduser("~")
@@ -93,11 +103,11 @@ PHOTOS_DIR.mkdir(exist_ok=True)
 TEMPLATES_DIR.mkdir(exist_ok=True)
 STATIC_DIR.mkdir(exist_ok=True)
 
-# Default camera and display settings
+# Default camera and display settings (from hardware profile)
 DEFAULT_CAMERA = 0
 DEFAULT_PORT = 5555
-FRAME_WIDTH = 640
-FRAME_HEIGHT = 480
+FRAME_WIDTH = HW.frame_width
+FRAME_HEIGHT = HW.frame_height
 
 # Gesture detection zones and thresholds (from .env, defaults below)
 def _env_float(key: str, default: float) -> float:
@@ -190,7 +200,7 @@ class NostrFeed:
         while True:
             self._fetch_events()
             self._fetch_profiles()
-            time.sleep(30)  # Refresh every 30 seconds
+            time.sleep(HW.nostr_refresh)
     
     def _fetch_profiles(self):
         """Fetch profiles (kind 0) for all authors"""
@@ -286,7 +296,7 @@ class NostrFeed:
             if not os.path.exists(NOSTR_SCRIPT):
                 raise FileNotFoundError(f"Script not found: {NOSTR_SCRIPT}")
             
-            cmd = [NOSTR_SCRIPT, "--kind", "1", "--limit", "50", "--output", "json"]
+            cmd = [NOSTR_SCRIPT, "--kind", "1", "--limit", str(HW.nostr_limit), "--output", "json"]
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
             
             if result.returncode == 0 and result.stdout.strip():
@@ -381,7 +391,7 @@ class CameraHandler:
         self.hands = self.mp_hands.Hands(
             static_image_mode=False,
             max_num_hands=1,
-            model_complexity=0,  # Lightest model for RPi5
+            model_complexity=0,  # Lightest model
             min_detection_confidence=0.6,
             min_tracking_confidence=0.4
         )
@@ -390,11 +400,11 @@ class CameraHandler:
         self.frame_lock = threading.Lock()
         self.current_frame = None
         self.processed_frame = None
-        
+
         # Face detection using OpenCV Haar Cascade (lightweight)
         cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
         self.face_cascade = cv2.CascadeClassifier(cascade_path)
-        self.face_detection_interval = 30  # Detect faces every N frames (~1x per second at 30fps) - optimized for RPi5
+        self.face_detection_interval = HW.face_detection_interval
         self.frame_count = 0
     
     def start(self):
@@ -421,7 +431,7 @@ class CameraHandler:
                     self.camera_index = idx
                     self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
                     self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
-                    self.cap.set(cv2.CAP_PROP_FPS, 30)
+                    self.cap.set(cv2.CAP_PROP_FPS, HW.camera_fps)
                     
                     self.running = True
                     t = threading.Thread(target=self._capture_loop, daemon=True)
@@ -728,26 +738,26 @@ class CameraHandler:
                 self.current_frame = frame.copy()
                 self.processed_frame = frame
             
-            # Small delay to limit CPU usage on RPi5 (~20fps max)
-            time.sleep(0.02)
+            # Small delay to limit CPU usage (tuned per hardware profile)
+            time.sleep(HW.capture_loop_sleep)
     
     def _detect_faces(self, frame):
-        """Detect faces in the current frame using OpenCV Haar Cascade (optimized for RPi5)"""
+        """Detect faces in the current frame using OpenCV Haar Cascade"""
         global gesture_state
-        
-        # Downscale for faster processing (33% size for RPi5)
-        scale = 0.33
+
+        # Downscale for faster processing (tuned per hardware profile)
+        scale = HW.face_scale
         small_frame = cv2.resize(frame, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
         
         # Convert to grayscale for face detection
         gray = cv2.cvtColor(small_frame, cv2.COLOR_BGR2GRAY)
         
-        # Detect faces with parameters optimized for RPi5
+        # Detect faces with parameters tuned per hardware profile
         faces = self.face_cascade.detectMultiScale(
             gray,
-            scaleFactor=1.3,  # Faster with larger scale factor
-            minNeighbors=3,   # Slightly less strict
-            minSize=(20, 20), # Smaller min size due to downscale
+            scaleFactor=1.3,
+            minNeighbors=3,
+            minSize=(HW.face_min_size, HW.face_min_size),
             flags=cv2.CASCADE_SCALE_IMAGE
         )
         
@@ -776,12 +786,11 @@ class CameraHandler:
                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 1)
     
     def get_frame(self):
-        """Get current frame as JPEG bytes (optimized for RPi5)"""
+        """Get current frame as JPEG bytes"""
         with self.frame_lock:
             if self.processed_frame is None:
                 return None
-            # Lower quality for faster streaming on RPi5
-            ret, jpeg = cv2.imencode('.jpg', self.processed_frame, [cv2.IMWRITE_JPEG_QUALITY, 60])
+            ret, jpeg = cv2.imencode('.jpg', self.processed_frame, [cv2.IMWRITE_JPEG_QUALITY, HW.jpeg_quality])
             return jpeg.tobytes() if ret else None
     
     def capture_photo(self):
@@ -1212,6 +1221,14 @@ def api_config():
         'qr_display_time': QR_DISPLAY_TIME,
         'dark_mode_timeout': DARK_MODE_TIMEOUT,
     }
+    # Expose hardware profile for frontend tuning
+    config['hardware'] = {
+        'profile': HW.profile_name,
+        'label': HW.label,
+        'board': HW.board,
+        'ram_mb': HW.ram_mb,
+        'poll_interval_ms': HW.frontend_poll_ms,
+    }
     return jsonify(config)
 
 # --- FACE RECOGNITION API ---
@@ -1314,8 +1331,8 @@ def video_feed():
             if frame:
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-            time.sleep(0.033)  # ~30 fps
-    
+            time.sleep(HW.stream_fps_sleep)
+
     return Response(generate(),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
@@ -1342,7 +1359,7 @@ def gesture_websocket_emitter():
     last_state = {}
     
     while True:
-        time.sleep(0.033)  # ~30 FPS - more efficient than 50ms polling
+        time.sleep(HW.ws_emitter_sleep)
         
         if ws_clients_connected <= 0:
             continue  # No clients, skip processing

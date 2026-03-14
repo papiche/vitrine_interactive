@@ -1136,6 +1136,11 @@ async function loadConfig() {
             if (g.open_hand_hold_time != null) CONFIG.OPEN_HAND_HOLD = g.open_hand_hold_time;
             if (g.dark_mode_timeout != null) CONFIG.DARK_MODE_TIMEOUT = g.dark_mode_timeout;
         }
+        // Override poll interval from hardware profile
+        if (state.config.hardware && state.config.hardware.poll_interval_ms != null) {
+            CONFIG.POLL_INTERVAL = state.config.hardware.poll_interval_ms;
+            console.log(`[HW] Profile: ${state.config.hardware.label} | Poll: ${CONFIG.POLL_INTERVAL}ms`);
+        }
         // Check if we have slides (v2.0 config)
         if (state.config.slides && state.config.slides.length > 0) {
             console.log(`[Config] Loaded ${state.config.slides.length} slides`);
