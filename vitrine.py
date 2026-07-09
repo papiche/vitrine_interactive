@@ -9,7 +9,7 @@ Features:
 - Horizontal swipe for message navigation
 - Open hand to show message details
 - Thumbs up to capture photo and post to Nostr
-- QR code display for http://127.0.0.1:54321/g1
+- QR code display for http://127.0.0.1:54321/earth/atomic.html
 
 Usage:
     source ~/.astro/bin/activate
@@ -1020,7 +1020,7 @@ def post_photo_to_nostr(photo_path, message="📸 Photo from UPlanet Vitrine Int
         print(f"[NOSTR] Error posting: {e}")
         return False
 
-def generate_qr_code(url="http://127.0.0.1:54321/g1"):
+def generate_qr_code(url="http://127.0.0.1:54321/earth/atomic.html"):
     """Generate QR code image as base64"""
     if not HAS_QRCODE:
         return None
@@ -1175,7 +1175,7 @@ def api_capture():
         'ipfs_url': ipfs_url,
         'posted': posted,
         'qr_code': qr_data,
-        'qr_url': 'http://127.0.0.1:54321/g1',
+        'qr_url': 'http://127.0.0.1:54321/earth/atomic.html',
         'faces': face_results
     })
 
@@ -1185,7 +1185,7 @@ def api_qr():
     qr_data = generate_qr_code()
     return jsonify({
         'qr_code': qr_data,
-        'url': 'http://127.0.0.1:54321/g1'
+        'url': 'http://127.0.0.1:54321/earth/atomic.html'
     })
 
 @app.route('/api/config')
